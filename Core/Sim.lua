@@ -322,7 +322,9 @@ local function buildSide(sim, id, fighter)
     elseif def.kind == "pet" then
       pets[#pets + 1] = it
     elseif def.kind == "form" then
-      forms[#forms + 1] = it
+      local slot = ns.Grid.EquipmentSlot(def)
+      forms[slot] = forms[slot] or {}
+      forms[slot][#forms[slot] + 1] = it
     end
   end
   local function byPower(a, b)
@@ -364,7 +366,9 @@ local function buildSide(sim, id, fighter)
   for _, it in ipairs(ranged) do if not activeWeapons[it] then it.enabled = false it.reason = "hands" end end
   side.activePet = pets[1]
   for i = 2, #pets do pets[i].enabled = false pets[i].suppressed = true pets[i].reason = "onepet" end
-  for i = 2, #forms do forms[i].enabled = false forms[i].suppressed = true forms[i].reason = forms[i].def.tagSet.aspect and "oneaspect" or "oneform" end
+  for slot, list in pairs(forms) do
+    for i = 2, #list do list[i].enabled = false list[i].suppressed = true list[i].reason = "one" .. slot end
+  end
 
   for _, it in ipairs(side.items) do
     local def = it.def

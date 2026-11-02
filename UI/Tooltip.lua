@@ -76,6 +76,9 @@ function Tooltip.ContextLines(def, context, target)
     end
   end
 
+  local rule = Describe.SlotRule(def)
+  if rule then add(rule) end
+
   if not context or not context.details then return lines end
   local tags = {}
   local seen = {}
@@ -98,26 +101,6 @@ function Tooltip.ContextLines(def, context, target)
       add("One melee weapon can attack at a time.")
     end
     add("Weapons are selected by base damage per second.")
-  elseif def.kind == "shield" then
-    add("One shield can be equipped. Two-handed weapons disable it.")
-  elseif def.kind == "armor" then
-    add("One item per armor slot.")
-  elseif def.kind == "ring" then
-    add("Two rings can be equipped.")
-  elseif def.kind == "trinket" then
-    add("Two trinkets can be equipped.")
-  elseif def.kind == "neck" then
-    add("One neck item can be equipped.")
-  elseif def.kind == "cloak" then
-    add("One cloak can be equipped.")
-  elseif def.kind == "relic" then
-    add("One idol can be equipped.")
-  elseif def.kind == "form" then
-    add(def.tagSet.aspect and "One aspect can be active." or "One form can be active.")
-  elseif def.kind == "pet" then
-    add("One pet can be active.")
-  elseif def.kind == "ammo" then
-    add("One ammo item can be equipped.")
   end
 
   if context and context.stats and def.stats and (def.stats.armor or 0) > 0 then

@@ -91,8 +91,30 @@ local WEAPON_LABELS = { axe = "Axe", sword = "Sword", mace = "Mace", dagger = "D
 local REQUIRE_LABELS = { catform = "Cat Form", bearform = "Bear Form", moonkin = "Moonkin Form", shield = "a shield", weapon = "a weapon",
   ranged = "a ranged weapon", melee = "a melee weapon", pet = "a pet", battlestance = "Battle Stance", defensivestance = "Defensive Stance",
   berserkerstance = "Berserker Stance", mana = "Mana", rage = "Rage", energy = "Energy", focus = "Focus", aspect = "an Aspect", trap = "a trap",
-  hands = "an available weapon slot", onepet = "the active pet slot", oneform = "the active form slot", oneaspect = "the active aspect slot", twohand = "a two-handed melee weapon", dualwield = "two one-handed melee weapons" }
+  hands = "an available weapon slot", onepet = "the active pet slot", oneform = "the active form slot", oneaspect = "the active aspect slot",
+  oneseal = "the active seal slot", onearmor = "the active armor spell slot", twohand = "a two-handed melee weapon", dualwield = "two one-handed melee weapons" }
 Describe.REQUIRE_LABELS = REQUIRE_LABELS
+local FORM_LABELS = { form = "Form", aspect = "Aspect", seal = "Seal", armor = "Armor Spell" }
+local SLOT_RULES = {
+  finger = "Only two rings can be equipped at a time.", trinket = "Only two trinkets can be equipped at a time.",
+  neck = "Only one neck item can be equipped at a time.", back = "Only one cloak can be equipped at a time.",
+  ammo = "Only one ammo item can be equipped at a time.", pet = "Only one pet can be active at a time.",
+}
+
+local function relicLabel(def)
+  return def.relicType or (def.classSet and def.classSet.PALADIN and "Libram") or (def.classSet and def.classSet.SHAMAN and "Totem") or "Idol"
+end
+
+function Describe.SlotRule(def)
+  if def.kind == "shield" then return "Only one shield can be active at a time. Two-handed weapons disable it." end
+  local slot = ns.Grid.EquipmentSlot(def)
+  if not slot then return nil end
+  if def.exclusiveGroup then return "Only one " .. string.lower(def.exclusiveLabel or "ability in this group") .. " can be active at a time." end
+  if slot == "relic" then return "Only one " .. string.lower(relicLabel(def)) .. " can be equipped at a time." end
+  if FORM_LABELS[slot] then return "Only one " .. string.lower(FORM_LABELS[slot]) .. " can be active at a time." end
+  if SLOT_LABELS[slot] then return "Only one " .. string.lower(SLOT_LABELS[slot]) .. " item can be equipped at a time." end
+  return SLOT_RULES[slot]
+end
 
 local function fmtStat(stat, value)
   local label = STAT_LABELS[stat] or stat
@@ -112,12 +134,10 @@ function Describe.KindLine(def)
     parts[#parts + 1] = (ranged and "Ranged " or def.hands == 2 and "Two-Handed " or "One-Handed ") .. (WEAPON_LABELS[def.weaponType] or "Weapon")
   elseif def.kind == "bag" then
     parts[#parts + 1] = "Bag"
-  elseif def.kind == "form" and def.tagSet.aspect then
-    parts[#parts + 1] = "Aspect"
-  elseif def.kind == "form" and def.tagSet.seal then
-    parts[#parts + 1] = "Seal"
+  elseif def.kind == "form" then
+    parts[#parts + 1] = FORM_LABELS[ns.Grid.EquipmentSlot(def)]
   elseif def.kind == "relic" then
-    parts[#parts + 1] = def.relicType or (def.classSet and def.classSet.PALADIN and "Libram") or (def.classSet and def.classSet.SHAMAN and "Totem") or "Idol"
+    parts[#parts + 1] = relicLabel(def)
   elseif def.kind == "ability" then
     local types = {}
     for _, entry in ipairs({ { "strike", "Strike" }, { "finisher", "Finisher" }, { "shot", "Shot" }, { "spell", "Spell" }, { "trap", "Trap" }, { "sting", "Sting" } }) do
@@ -953,8 +973,6 @@ function Describe.Lines(def, context)
   local gold = { r = 1, g = 0.82, b = 0 }
   local grey = { r = 0.6, g = 0.6, b = 0.6 }
 
-  if def.exclusiveGroup then add("One active " .. string.lower(def.exclusiveLabel or "ability in this group") .. ".", grey) end
-
   if def.kind == "weapon" then
     local speed = def.use and def.use.cd or 2
     local dps = ((def.weaponMin or 0) + (def.weaponMax or 0)) / 2 / speed
@@ -989,7 +1007,7 @@ function Describe.Lines(def, context)
     if use.condition and not use.once then
       add("Cooldown: " .. fmtScalar(use.cd) .. "s", gold, "timing")
     elseif details then
-      add("Initial cooldown: " .. fmtScalar(initial) .. "s", gold, "timing")
+      if use.once or math.abs(initial - use.cd) >= 1e-7 then add("Initial cooldown: " .. fmtScalar(initial) .. "s", gold, "timing") end
       add(use.once and "Once per battle" or ("Cooldown: " .. fmtScalar(use.cd) .. "s"), gold, "timing")
     elseif use.once then
       add(initial <= 0 and (use.condition and "Once per battle" or "On battle start (once per battle)") or ("Once per battle (" .. fmtScalar(initial) .. "s delay)"), gold, "timing")

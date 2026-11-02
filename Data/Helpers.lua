@@ -68,7 +68,7 @@ function H.Weapon(t)
     elseif t.weaponType == "dagger" or t.weaponType == "wand" then t.shape = H.S.v2
     else t.shape = H.S.v3 end
   end
-  local coefficient = t.coef or (ranged and 0.30 or 0.11 * (t.speed or 2.4) * (t.hands == 2 and 1.5 or 1))
+  local coefficient = t.coef or (ranged and 0.30 or math.floor(11 * (t.speed or 2.4) * (t.hands == 2 and 1.5 or 1) + 0.5) / 100)
   t.use = t.use or { cd = t.speed or 2.4, effects = { { type = "damage", weaponSelf = true, coef = coefficient, school = "physical" } } }
   t.use.cd = t.speed or t.use.cd
   t.tags = t.tags or {}

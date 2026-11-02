@@ -1591,6 +1591,7 @@ end
 function Battle.Replay()
   if not state then return end
   resetPlayback()
+  screen.skipButton:Show()
   beginIntro(true)
 end
 
@@ -1659,6 +1660,7 @@ function Battle.Show(result, opponent, run)
   screen.roundText:SetText(run.survival and string.format(L["Survival %d / %d"], run.round, ns.Economy.ROUNDS) or string.format(L["Round %d"], run.round))
   setSpeed(state.speed)
   resetPlayback()
+  screen.skipButton:Hide()
   beginIntro()
   ns.UI.Main.ShowScreen("battle")
 end

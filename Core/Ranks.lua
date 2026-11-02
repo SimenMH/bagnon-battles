@@ -56,13 +56,13 @@ local function scaleEffects(effects, scale, rank)
             or (e.type == "heal" or e.type == "hot") and (key == "pctMax" or key == "perPointPctMax")
           local factor = power and scale.power or mult
           if DECIMAL[key] then
-            local precision = key == "perPointPctMax" and 100000 or key == "pctMax" and 10000 or 100
+            local precision = key == "perPointPctMax" and 100000 or 100
             e[key] = math.floor(value * factor * precision + 0.5) / precision
           else e[key] = math.floor(value * factor + 0.5) end
         end
       end
       if e.rankTicks and e.rankTicks[rank] then e.tick = e.rankTicks[rank] end
-      if e.type == "damage" and (e.weapon or e.weaponSelf) then e.weaponPct = (e.weaponPct or 1) * scale.power end
+      if e.type == "damage" and (e.weapon or e.weaponSelf) then e.weaponPct = math.floor((e.weaponPct or 1) * scale.power * 20 + 0.5) / 20 end
       if (e.type == "buff" or e.type == "debuff") and e.stat == "dr" then e.value = math.min(90, e.value) end
       if e.type == "buff" and e.stat == "none" and e.double then e.duration = math.floor(e.duration * mult + 0.5) end
     elseif e.type == "stun" and e.rankScale ~= false then

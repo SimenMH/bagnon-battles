@@ -236,16 +236,11 @@ function Grid.EquipmentSlot(def)
   elseif def.kind == "cloak" then slot = "back"
   elseif def.kind == "relic" then slot = "relic"
   elseif def.kind == "ammo" then slot = "ammo"
-  elseif def.kind == "form" then slot = def.tagSet.aspect and "aspect" or "form"
+  elseif def.kind == "form" then slot = def.tagSet.aspect and "aspect" or def.tagSet.seal and "seal" or def.tagSet.armor and "armor" or "form"
   elseif def.kind == "pet" then slot = "pet" end
   if not slot then return nil end
   return slot, (slot == "finger" or slot == "trinket") and 2 or 1
 end
-
-local SLOT_NAMES = {
-  head = "Head", shoulder = "Shoulder", chest = "Chest", hands = "Hands", legs = "Legs",
-  feet = "Feet", wrist = "Wrist", waist = "Waist", neck = "Neck", back = "Back", relic = "Relic", form = "Form", aspect = "Aspect", pet = "Pet", ammo = "Ammo",
-}
 
 function Grid:CanEquip(def, ignore)
   local slot, limit = Grid.EquipmentSlot(def)
@@ -254,12 +249,7 @@ function Grid:CanEquip(def, ignore)
   for _, other in ipairs(self.items) do
     if other ~= ignore and Grid.EquipmentSlot(ns.Items[other.id]) == slot then
       count = count + 1
-      if count >= limit then
-        if slot == "finger" then return false, "Only two rings can be equipped." end
-        if slot == "trinket" then return false, "Only two trinkets can be equipped." end
-        if def.exclusiveGroup then return false, (def.exclusiveLabel or "Ability") .. " slot already occupied." end
-        return false, (SLOT_NAMES[slot] or slot) .. " slot already occupied."
-      end
+      if count >= limit then return false, ns.Describe.SlotRule(def) end
     end
   end
   return true

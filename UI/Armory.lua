@@ -13,11 +13,44 @@ local CATEGORIES = { { "all", "All" }, { "abilities", "Abilities" }, { "gear", "
 local ABILITY_MODES = { { "active", "Active" }, { "passives", "Passive" } }
 local RARITIES = { { 1, "Common" }, { 2, "Uncommon" }, { 3, "Rare" }, { 4, "Epic" }, { 5, "Legendary" } }
 local TAGS = {
-  { "strike", "Strike" }, { "finisher", "Finisher" }, { "shot", "Shot" }, { "spell", "Spell" },
-  { "heal", "Healing" }, { "bleed", "Bleed" }, { "hot", "HoT" }, { "trap", "Trap" },
-  { "pet", "Pet" }, { "autoattack", "Auto-attack" }, { "crit", "Crit" }, { "control", "Control" },
-  { "poison", "Poison" }, { "shield", "Shield" }, { "melee", "Melee" }, { "ranged", "Ranged" },
-  { "nature", "Nature" }, { "arcane", "Arcane" }, { "fire", "Fire" }, { "frost", "Frost" },
+  { "cat", "Cat Form", "DRUID" }, { "bear", "Bear Form", "DRUID" },
+  { "pet", "Pets", "HUNTER" }, { "shot", "Shots", "HUNTER" }, { "sting", "Stings", "HUNTER" }, { "trap", "Traps", "HUNTER" },
+  { "aspect", "Aspects", "HUNTER" }, { "ammo", "Ammunition", "HUNTER" },
+  { "builder", "Combo Builders", "ROGUE" }, { "finisher", "Finishers", "ROGUE" }, { "opener", "Openers", "ROGUE" },
+  { "poison", "Poisons", "ROGUE" }, { "bleed", "Bleeds", "ROGUE" },
+  { "shout", "Shouts", "WARRIOR" }, { "bleed", "Bleeds", "WARRIOR" },
+  { "seal", "Seals", "PALADIN" }, { "judgement", "Judgement", "PALADIN" }, { "aura", "Auras", "PALADIN" }, { "blessing", "Blessings", "PALADIN" },
+  { "totem", "Totems", "SHAMAN" }, { "shock", "Shocks", "SHAMAN" }, { "imbue", "Weapon Imbues", "SHAMAN" },
+  { "curse", "Curses", "WARLOCK" }, { "pet", "Demons", "WARLOCK" }, { "drain", "Drains", "WARLOCK" },
+  { "armor", "Armor Spells", "MAGE" }, { "armor", "Armor Spells", "WARLOCK" },
+  { "heal", "Healing" }, { "dot", "Damage over Time" }, { "defensive", "Defensive" },
+  { "shield", "Shield & Block" }, { "control", "Crowd Control" }, { "mana", "Mana Regeneration" },
+}
+local function feralForms(i)
+  local cat = i.related.catform or i.resources.energy or i.resources.combo
+  local bear = i.related.bearform or i.resources.rage or i.tags.bear
+  if not cat and not bear and i.related.form then return true, true end
+  return cat, bear
+end
+local TAG_TESTS = {
+  cat = function(i) return (feralForms(i)) end,
+  bear = function(i) return select(2, feralForms(i)) end,
+  pet = function(i) return i.related.pet or i.tags.pet end,
+  ammo = function(i) return i.related.ammo or i.tags.ammo end,
+  aura = function(i) return i.groups.paladin_aura end,
+  blessing = function(i) return i.groups.paladin_blessing end,
+  heal = function(i, def)
+    return i.effects.heal or i.effects.hot or i.effects.tickHots or i.tags.heal or i.tags.hot or (def.stats.healing or 0) > 0 or (def.stats.lifesteal or 0) > 0
+  end,
+  dot = function(i) return i.effects.dot or i.effects.tickDots or i.effects.consumeDots or i.triggers.dotTick or i.tags.dot or i.tags.bleed end,
+  defensive = function(i)
+    return i.tags.defensive or i.effects.absorb or i.buffs.dr or i.buffs.dodge or i.buffs.armor or i.buffs.block or i.buffs.blockChance
+  end,
+  control = function(i) return i.tags.control or i.effects.stun or i.debuffs.haste end,
+  mana = function(i, def) return i.tags.mana_recovery or i.gains.mana or (def.stats.regen or 0) > 0 end,
+  shield = function(i, def)
+    return i.related.shield or i.triggers.block or i.buffs.block or i.buffs.blockChance or (def.stats.block or 0) > 0 or (def.stats.blockChance or 0) > 0
+  end,
 }
 local ABILITIES = ns.Util.Set{ "ability", "form", "pet", "ammo" }
 local screen
@@ -45,40 +78,81 @@ function Armory.Type(def)
   return "gear"
 end
 
-local tagCache = {}
-function Armory.Tags(def)
-  if tagCache[def] then return tagCache[def] end
-  local tags = ns.Util.ShallowCopy(def.tagSet)
+local function list(value)
+  return type(value) == "table" and value or { value }
+end
+
+local function inspect(def)
+  local info = {
+    tags = ns.Util.ShallowCopy(def.tagSet), related = {}, groups = {}, resources = {}, gains = {}, effects = {}, buffs = {}, debuffs = {},
+    triggers = {},
+  }
+  local function relate(flags) for _, flag in ipairs(list(flags)) do info.related[flag] = true end end
+  local function condition(value)
+    local provided = type(value) == "string" and value:match("^provides:(.+)$")
+    if provided then relate(provided) end
+  end
+  local function reference(key)
+    local other = key and ns.ItemsByKey[key]
+    if not other or other == def then return end
+    for tag in pairs(other.tagSet) do
+      if tag ~= "defensive" and tag ~= "control" then info.tags[tag] = true end
+    end
+    if other.exclusiveGroup then info.groups[other.exclusiveGroup] = true end
+    relate(other.provides)
+    if other.use then relate(other.use.requires) end
+  end
   local function match(filter)
     if not filter then return end
-    if filter.tag then tags[filter.tag] = true end
-    for _, tag in ipairs(filter.anyTag or {}) do tags[tag] = true end
-    if filter.kind == "pet" or filter.kind == "shield" then tags[filter.kind] = true end
+    if filter.tag then info.tags[filter.tag] = true end
+    for _, tag in ipairs(filter.anyTag or {}) do info.tags[tag] = true end
+    relate(filter.kind)
+    reference(filter.key)
   end
-  local function effects(list)
-    for _, effect in ipairs(list or {}) do
+  local function effects(entries)
+    for _, effect in ipairs(entries or {}) do
+      info.effects[effect.type] = true
       match(effect.match)
-      if effect.type == "heal" or effect.type == "hot" then tags.heal = true end
-      if effect.type == "hot" then tags.hot = true end
-      if effect.critBonus or effect.critIf then tags.crit = true end
-      if effect.pet then tags.pet = true end
-      if effect.type == "stun" or effect.type == "debuff" and (effect.stat == "haste" or effect.stat == "ap" or effect.stat == "meleePct") then tags.control = true end
+      match(effect.double)
+      if effect.consumeDots then info.effects.consumeDots = true match(effect.consumeDots.match) end
+      if effect.type == "resource" then info.resources[effect.resource] = true info.gains[effect.resource] = true end
+      if effect.type == "buff" then info.buffs[effect.stat] = true end
+      if effect.type == "debuff" then info.debuffs[effect.stat] = true end
+      if effect.type == "cast" then reference(effect.key) end
+      if effect.pet then relate("pet") end
     end
   end
-  if def.kind == "pet" or def.kind == "shield" then tags[def.kind] = true end
-  if (def.stats.healing or 0) > 0 or (def.stats.lifesteal or 0) > 0 then tags.heal = true end
-  if (def.stats.crit or 0) > 0 or (def.stats.critDamage or 0) > 0 then tags.crit = true end
+  if def.kind == "pet" or def.kind == "shield" or def.kind == "ammo" then relate(def.kind) end
+  if def.exclusiveGroup then info.groups[def.exclusiveGroup] = true end
+  relate(def.provides)
+  for resource in pairs(def.grants or {}) do info.resources[resource] = true end
+  for _, key in ipairs(def.shopRequires or {}) do reference(key) end
   if def.use then
+    relate(def.use.requires)
+    condition(def.use.condition)
+    if def.use.resource then info.resources[def.use.resource] = true end
     effects(def.use.effects)
-    local requires = type(def.use.requires) == "table" and def.use.requires or { def.use.requires }
-    for _, requirement in ipairs(requires) do if requirement == "shield" then tags.shield = true end end
   end
   for _, trigger in ipairs(def.triggers) do
+    info.triggers[trigger.on] = true
+    if trigger.resource then info.resources[trigger.resource] = true end
+    condition(trigger.condition)
     match(trigger.match)
-    if trigger.on == "crit" or trigger.on == "anyCrit" or trigger.on == "adjacentCrit" then tags.crit = true end
     effects(trigger.effects)
   end
   for _, adjacency in ipairs(def.adjacency) do match(adjacency.match) end
+  return info
+end
+
+local tagCache = {}
+function Armory.Tags(def)
+  if tagCache[def] then return tagCache[def] end
+  local info, tags = inspect(def), {}
+  for _, option in ipairs(TAGS) do
+    local key = option[1]
+    local test = TAG_TESTS[key]
+    if test then tags[key] = test(info, def) and true or nil else tags[key] = info.tags[key] end
+  end
   tagCache[def] = tags
   return tags
 end
@@ -202,11 +276,17 @@ end
 local refresh
 
 local function tagOptions(classKey)
-  local available, options = {}, {}
+  local counts, abilities, options = {}, {}, {}
   for _, def in ipairs(Armory.Entries(classKey, "all")) do
-    for tag in pairs(Armory.Tags(def)) do available[tag] = true end
+    for tag in pairs(Armory.Tags(def)) do
+      counts[tag] = (counts[tag] or 0) + 1
+      if ABILITIES[def.kind] then abilities[tag] = true end
+    end
   end
-  for _, option in ipairs(TAGS) do if available[option[1]] then options[#options + 1] = option end end
+  for _, option in ipairs(TAGS) do
+    local key = option[1]
+    if abilities[key] and counts[key] >= 2 and (not option[3] or option[3] == classKey) then options[#options + 1] = option end
+  end
   return options
 end
 
@@ -391,7 +471,7 @@ local function create(parent)
   screen.filtersPanel:SetSize(FILTER_W, 570)
   screen.filtersPanel:SetPoint("TOPLEFT", 16, -120)
   screen.filterGroups = {}
-  for _, row in ipairs({ { "specs", "Spec", 1 }, { "rarities", "Rarity", 2 }, { "tags", "Tags", 2 } }) do
+  for _, row in ipairs({ { "specs", "Spec", 1 }, { "rarities", "Rarity", 2 }, { "tags", "Tags", 1 } }) do
     local key = row[1]
     local group = CreateFrame("Frame", nil, screen.filtersPanel)
     group:SetWidth(FILTER_W)

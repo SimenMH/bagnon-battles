@@ -12,7 +12,8 @@ ADDON_NAME = "Bagnon_Battles"
 DEV_NAME = ADDON_NAME + "_Dev"
 DEV_TITLE = "Bagnon Battles (Dev)"
 ROOT = Path(__file__).resolve().parents[2]
-WOW_ADDONS = Path("/mnt/d/Games/Battle.net Games/World of Warcraft/_retail_/Interface/AddOns")
+WOW_ROOT = Path("/mnt/d/Games/Battle.net Games/World of Warcraft")
+WOW_ADDONS = {client: WOW_ROOT / f"_{client}_" / "Interface" / "AddOns" for client in ("retail", "forever")}
 DEVELOPMENT_MARKERS = (".git", "_dev")
 BLOCKED_PARTS = {
     "_dev", ".git", ".agents", ".codex", ".aws", ".github", "__pycache__",
@@ -186,13 +187,14 @@ def main():
     parser = argparse.ArgumentParser(description="Build a runtime-only Bagnon Battles addon package.")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="Validate runtime files without writing a package.")
-    mode.add_argument("--dev", action="store_true", help=f"Copy the runtime files into {WOW_ADDONS / DEV_NAME}.")
+    mode.add_argument("--dev", nargs="?", const="retail", choices=sorted(WOW_ADDONS),
+                      help=f"Copy the runtime files into {DEV_NAME} in a client's AddOns folder (default: retail).")
     options = parser.parse_args()
     try:
         if options.check:
             print(f"Validated {len(collect_files(ROOT))} runtime and license files.")
         elif options.dev:
-            target, count = install_dev(ROOT, WOW_ADDONS)
+            target, count = install_dev(ROOT, WOW_ADDONS[options.dev])
             print(f"Copied {count} runtime and license files to {target}")
         else:
             stage, archive, count = build_package(ROOT)

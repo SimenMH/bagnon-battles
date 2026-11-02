@@ -1,0 +1,469 @@
+local ADDON, ns = ...
+local T = ns.UI.Theme
+local L = ns.L
+local Describe = ns.Describe
+
+local Armory = {}
+ns.UI.Armory = Armory
+
+local PAGE_SIZE = 8
+local FILTER_W = 210
+local CARD_LEFT = FILTER_W + 28
+local CATEGORIES = { { "all", "All" }, { "abilities", "Abilities" }, { "gear", "Gear" }, { "bags", "Bags" } }
+local ABILITY_MODES = { { "active", "Active" }, { "passives", "Passive" } }
+local RARITIES = { { 1, "Common" }, { 2, "Uncommon" }, { 3, "Rare" }, { 4, "Epic" }, { 5, "Legendary" } }
+local TAGS = {
+  { "strike", "Strike" }, { "finisher", "Finisher" }, { "shot", "Shot" }, { "spell", "Spell" },
+  { "heal", "Healing" }, { "bleed", "Bleed" }, { "hot", "HoT" }, { "trap", "Trap" },
+  { "pet", "Pet" }, { "autoattack", "Auto-attack" }, { "crit", "Crit" }, { "control", "Control" },
+  { "poison", "Poison" }, { "shield", "Shield" }, { "melee", "Melee" }, { "ranged", "Ranged" },
+  { "nature", "Nature" }, { "arcane", "Arcane" }, { "fire", "Fire" }, { "frost", "Frost" },
+}
+local ABILITIES = ns.Util.Set{ "ability", "form", "pet", "ammo" }
+local screen
+
+local function selected(options)
+  local out = {}
+  for _, option in ipairs(options) do out[option[1]] = true end
+  return out
+end
+
+local function specOptions(classKey)
+  local options = { { "shared", L["Shared"] } }
+  for _, spec in ipairs(ns.Classes[classKey].specs) do options[#options + 1] = { spec.tag, spec.name } end
+  return options
+end
+
+function Armory.DefaultFilters(classKey)
+  return { abilityModes = selected(ABILITY_MODES), specs = selected(specOptions(classKey)), rarities = selected(RARITIES), tags = {} }
+end
+
+function Armory.Type(def)
+  if ABILITIES[def.kind] then return def.use and "active" or "passives" end
+  if def.kind == "bag" then return "bags" end
+  if def.kind == "material" then return "materials" end
+  return "gear"
+end
+
+local tagCache = {}
+function Armory.Tags(def)
+  if tagCache[def] then return tagCache[def] end
+  local tags = ns.Util.ShallowCopy(def.tagSet)
+  local function match(filter)
+    if not filter then return end
+    if filter.tag then tags[filter.tag] = true end
+    for _, tag in ipairs(filter.anyTag or {}) do tags[tag] = true end
+    if filter.kind == "pet" or filter.kind == "shield" then tags[filter.kind] = true end
+  end
+  local function effects(list)
+    for _, effect in ipairs(list or {}) do
+      match(effect.match)
+      if effect.type == "heal" or effect.type == "hot" then tags.heal = true end
+      if effect.type == "hot" then tags.hot = true end
+      if effect.critBonus or effect.critIf then tags.crit = true end
+      if effect.pet then tags.pet = true end
+      if effect.type == "stun" or effect.type == "debuff" and (effect.stat == "haste" or effect.stat == "ap" or effect.stat == "meleePct") then tags.control = true end
+    end
+  end
+  if def.kind == "pet" or def.kind == "shield" then tags[def.kind] = true end
+  if (def.stats.healing or 0) > 0 or (def.stats.lifesteal or 0) > 0 then tags.heal = true end
+  if (def.stats.crit or 0) > 0 or (def.stats.critDamage or 0) > 0 then tags.crit = true end
+  if def.use then
+    effects(def.use.effects)
+    local requires = type(def.use.requires) == "table" and def.use.requires or { def.use.requires }
+    for _, requirement in ipairs(requires) do if requirement == "shield" then tags.shield = true end end
+  end
+  for _, trigger in ipairs(def.triggers) do
+    match(trigger.match)
+    if trigger.on == "crit" or trigger.on == "anyCrit" or trigger.on == "adjacentCrit" then tags.crit = true end
+    effects(trigger.effects)
+  end
+  for _, adjacency in ipairs(def.adjacency) do match(adjacency.match) end
+  tagCache[def] = tags
+  return tags
+end
+
+local function filterMatches(def, category, filters)
+  if not filters then return true end
+  if category == "abilities" and filters.abilityModes and not filters.abilityModes[Armory.Type(def)] then return false end
+  if filters.specs and not filters.specs[ns.Mastery.Spec(def) or "shared"] then return false end
+  if filters.rarities and not filters.rarities[def.quality] then return false end
+  local any, matched = false, false
+  for tag, checked in pairs(filters.tags or {}) do
+    if checked then
+      any = true
+      if Armory.Tags(def)[tag] then matched = true end
+    end
+  end
+  return not any or matched
+end
+
+local function categoryMatches(def, category)
+  if category == "abilities" then return ABILITIES[def.kind] end
+  if category == "bags" then return def.kind == "bag" end
+  if category == "gear" then return def.kind ~= "bag" and not ABILITIES[def.kind] end
+  return true
+end
+
+local function searchMatches(def, query)
+  if query == "" then return true end
+  local parts = { def.name, Describe.KindLine(def), ns.QUALITY_NAMES[def.quality] or "" }
+  for _, line in ipairs(Describe.Lines(def, { details = false })) do parts[#parts + 1] = line.text end
+  for _, key in ipairs(def.classes or {}) do
+    local class = ns.Classes[key]
+    if class then parts[#parts + 1] = class.name end
+  end
+  for _, tag in ipairs(def.tags) do parts[#parts + 1] = Describe.TagLabel(tag) end
+  return table.concat(parts, " "):lower():find(query, 1, true) ~= nil
+end
+
+local function summary(def)
+  if def.kind ~= "bag" and not ABILITIES[def.kind] then
+    local stats = {}
+    for _, line in ipairs(Describe.Lines(def, { details = false })) do
+      if line.text:match("^[+-]") then stats[#stats + 1] = line.text end
+    end
+    if #stats > 0 then return table.concat(stats, ", ") end
+  end
+  return Describe.Short(def)
+end
+
+function Armory.Entries(classKey, category, query, filters)
+  local class = ns.Classes[classKey]
+  if not class or not class.playable then return {} end
+  query = ns.Util.Trim(query or ""):lower()
+  local entries, seen = {}, {}
+  local function add(def)
+    if def.rank or (def.starter and def.noShop) or ns.RETIRED_IDS[def.id] or seen[def.key] then return end
+    if not categoryMatches(def, category) or not searchMatches(def, query) or not filterMatches(def, category, filters) then return end
+    entries[#entries + 1] = def
+    seen[def.key] = true
+  end
+  for _, def in ipairs(ns.GetShopPool(classKey, ns.Economy.ROUNDS)) do add(def) end
+  for _, def in ipairs(ns.ItemList) do
+    if def.craftable and def.minRound <= ns.Economy.ROUNDS and ns.ItemOfferedForClass(def, classKey) then add(def) end
+  end
+  table.sort(entries, function(a, b)
+    if a.quality ~= b.quality then return a.quality < b.quality end
+    if a.minRound ~= b.minRound then return a.minRound < b.minRound end
+    if a.kind ~= b.kind then return a.kind < b.kind end
+    if a.name == b.name then return a.key < b.key end
+    return a.name < b.name
+  end)
+  return entries
+end
+
+local function tooltip(card, def)
+  if not def then return end
+  ns.UI.Tooltip.Show(card, def, { context = screen.context })
+end
+
+local function refreshCards()
+  ns.UI.Tooltip.Hide()
+  local pages = math.max(1, math.ceil(#screen.entries / PAGE_SIZE))
+  screen.page = math.max(1, math.min(pages, screen.page))
+  screen.pageLabel:SetText(string.format("%d / %d", screen.page, pages))
+  screen.previous:SetEnabled(screen.page > 1)
+  screen.next:SetEnabled(screen.page < pages)
+  screen.empty:SetShown(#screen.entries == 0)
+  screen.count:SetText(string.format(L["%s: %d items"], ns.Classes[screen.classKey].name, #screen.entries))
+  for i, card in ipairs(screen.cards) do
+    local base = screen.entries[(screen.page - 1) * PAGE_SIZE + i]
+    card.base = base
+    if base then
+      local rank = screen.ranks[base.key] or 1
+      local def = ns.Ranks.Definition(base, rank) or base
+      card.def = def
+      card.name:SetText(def.name)
+      card.name:SetTextColor(T.QualityColor(def.quality))
+      card.kind:SetText(Describe.KindLine(def))
+      card.summary:SetText(summary(def))
+      T.SetItemIcon(card.iconSlot.icon, def.icon)
+      card.iconSlot:SetQuality(def.quality)
+      ns.UI.GridView.SetRankBadge(card.iconSlot, def)
+      card.glyph:SetItem(def)
+      local cost = tostring(base.cost) .. " " .. T.GOLD_ICON
+      local round = string.format(L["Round %d"], base.minRound)
+      if base.craftable then round = string.format(L["Crafted from round %d"], base.minRound) end
+      card.availability:SetText(cost .. "   " .. round)
+      for number, button in ipairs(card.rankButtons) do
+        button:SetShown(base.rankable == true)
+        button:SetHighlighted(number == rank)
+        button.def = ns.Ranks.Definition(base, number)
+      end
+      card:Show()
+    else
+      card.def = nil
+      card:Hide()
+    end
+  end
+end
+
+local refresh
+
+local function tagOptions(classKey)
+  local available, options = {}, {}
+  for _, def in ipairs(Armory.Entries(classKey, "all")) do
+    for tag in pairs(Armory.Tags(def)) do available[tag] = true end
+  end
+  for _, option in ipairs(TAGS) do if available[option[1]] then options[#options + 1] = option end end
+  return options
+end
+
+local function refreshFilters()
+  local options = { specs = specOptions(screen.classKey), rarities = RARITIES, tags = tagOptions(screen.classKey) }
+  local y = 0
+  for _, key in ipairs({ "specs", "rarities", "tags" }) do
+    local group = screen.filterGroups[key]
+    group:ClearAllPoints()
+    group:SetPoint("TOPLEFT", screen.filtersPanel, "TOPLEFT", 0, -y)
+    group.options = options[key]
+    for index, option in ipairs(group.options) do
+      local checkbox = group.checks[index]
+      if not checkbox then
+        checkbox = T.CreateCheck(group, L[option[2]], function(checked)
+          screen.filters[key][group.checks[index].key] = checked
+          refresh()
+        end)
+        checkbox:SetSize(20, 20)
+        checkbox.label:SetFont(T.FONT, 11, "")
+        checkbox:SetHitRectInsets(0, group.columns == 1 and -165 or -77, 0, 0)
+        group.checks[index] = checkbox
+      end
+      checkbox.key = option[1]
+      checkbox.label:SetText(L[option[2]])
+      checkbox:SetChecked(screen.filters[key][option[1]] == true)
+      checkbox:ClearAllPoints()
+      checkbox:SetPoint("TOPLEFT", group, "TOPLEFT", ((index - 1) % group.columns) * 103, -20 - math.floor((index - 1) / group.columns) * 20)
+      checkbox:Show()
+    end
+    for index = #group.options + 1, #group.checks do group.checks[index]:Hide() end
+    local height = 20 + math.ceil(#group.options / group.columns) * 20
+    group:SetHeight(height)
+    y = y + height + 10
+  end
+end
+
+refresh = function()
+  screen.entries = Armory.Entries(screen.classKey, screen.category, screen.query, screen.filters)
+  screen.page = 1
+  for _, button in ipairs(screen.classButtons) do button:SetHighlighted(button.classKey == screen.classKey) end
+  for _, button in ipairs(screen.categories) do button:SetHighlighted(button.category == screen.category) end
+  screen.abilityModeGroup:SetShown(screen.category == "abilities")
+  for _, checkbox in ipairs(screen.abilityModeGroup.checks) do checkbox:SetChecked(screen.filters.abilityModes[checkbox.key] == true) end
+  refreshFilters()
+  local class = ns.Classes[screen.classKey]
+  screen.context = { classDef = class, classKey = class.key, res = class.resources }
+  refreshCards()
+end
+
+local function turnPage(direction)
+  local previous = screen.page
+  screen.page = screen.page + direction
+  refreshCards()
+  if screen.page ~= previous then T.PlaySound(T.SOUND_CLICK) end
+end
+
+function Armory.Close()
+  if screen then screen:Hide() end
+end
+
+local function createCard(parent, index)
+  local card = T.Panel(parent, "card", { frameType = "Button" })
+  local width = (ns.UI.Main.CONTENT_W - CARD_LEFT - 26) / 2
+  card:SetSize(width, 132)
+  card:SetPoint("TOPLEFT", parent, "TOPLEFT", CARD_LEFT + ((index - 1) % 2) * (width + 10), -120 - math.floor((index - 1) / 2) * 142)
+  card.iconSlot = T.CreateSlot(card, 44)
+  card.iconSlot:SetPoint("TOPLEFT", 12, -12)
+  card.iconSlot:EnableMouse(false)
+  card.name = T.Text(card, 14, T.C.text)
+  card.name:SetPoint("TOPLEFT", 68, -12)
+  card.name:SetWidth(width - 80)
+  card.name:SetHeight(20)
+  card.name:SetJustifyH("LEFT")
+  card.kind = T.Text(card, 11, T.C.muted)
+  card.kind:SetPoint("TOPLEFT", 68, -35)
+  card.summary = T.Text(card, 11, T.C.good)
+  card.summary:SetPoint("TOPLEFT", 12, -64)
+  card.summary:SetWidth(width - 24)
+  card.summary:SetHeight(26)
+  card.summary:SetJustifyH("LEFT")
+  card.summary:SetJustifyV("TOP")
+  card.availability = T.Text(card, 11, T.C.muted)
+  card.availability:SetPoint("BOTTOMLEFT", 12, 14)
+  card.glyph = T.CreateItemGlyph(card, 6)
+  card.glyph:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -188, 10)
+  card.rankButtons = {}
+  for rank = 1, 3 do
+    local button = T.CreateButton(card, string.format(L["Rank %d"], rank), 55, 20, "default", 10)
+    button:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -10 - (3 - rank) * 57, 9)
+    button.rank = rank
+    button:SetScript("OnClick", function(self)
+      if card.base then screen.ranks[card.base.key] = self.rank refreshCards() T.PlaySound(T.SOUND_CLICK) end
+    end)
+    button:SetScript("OnEnter", function(self) tooltip(self, self.def) end)
+    button:SetScript("OnLeave", ns.UI.Tooltip.Hide)
+    card.rankButtons[rank] = button
+  end
+  card:SetScript("OnEnter", function(self)
+    self:SetFillColor(T.RGB(T.C.bg4))
+    tooltip(self, self.def)
+  end)
+  card:SetScript("OnLeave", function(self)
+    self:SetFillColor(T.RGB(T.C.bg3))
+    ns.UI.Tooltip.Hide()
+  end)
+  return card
+end
+
+local function create(parent)
+  screen = T.Panel(parent, "panel")
+  screen:SetAllPoints(parent)
+  screen:SetFrameLevel(parent:GetFrameLevel() + 30)
+  screen:EnableMouse(true)
+  screen:EnableMouseWheel(true)
+  screen.category, screen.query, screen.page, screen.ranks = "all", "", 1, {}
+  screen.back = T.CreateButton(screen, L["Back to Camp"], 120, 28, "default", 12)
+  screen.back:SetPoint("TOPLEFT", 16, -14)
+  screen.back:SetScript("OnClick", function() Armory.Close() T.PlaySound(T.SOUND_CLICK) end)
+  screen.title = T.Title(screen, 22, T.C.gold, L["Armory"])
+  screen.title:SetPoint("LEFT", screen.back, "RIGHT", 16, 0)
+  screen.classButtons = {}
+  local classes = ns.PlayableClasses()
+  local titleWidth = math.max(84, math.ceil(screen.title:GetStringWidth()))
+  screen.title:SetSize(titleWidth, 28)
+  screen.title:SetJustifyH("LEFT")
+  local classLeft = 16 + screen.back:GetWidth() + 16 + titleWidth + 16
+  local buttonWidth = math.min(104, math.floor((ns.UI.Main.CONTENT_W - classLeft - 16 - (#classes - 1) * 4) / #classes))
+  for i, class in ipairs(classes) do
+    local button = T.CreateButton(screen, class.name, buttonWidth, 28, "default", 12)
+    button:SetPoint("TOPLEFT", screen, "TOPLEFT", classLeft + (i - 1) * (buttonWidth + 4), -14)
+    button.classKey = class.key
+    button:SetScript("OnClick", function(self)
+      screen.classKey = self.classKey
+      screen.filters.specs = selected(specOptions(self.classKey))
+      local relevant = selected(tagOptions(self.classKey))
+      for tag in pairs(screen.filters.tags) do if not relevant[tag] then screen.filters.tags[tag] = nil end end
+      refresh()
+      T.PlaySound(T.SOUND_CLICK)
+    end)
+    screen.classButtons[i] = button
+  end
+  screen.categories = {}
+  for index, category in ipairs(CATEGORIES) do
+    local button = T.CreateButton(screen, L[category[2]], 88, 28, "default", 12)
+    button:SetPoint("TOPLEFT", 16 + (index - 1) * 92, -58)
+    button.category = category[1]
+    button:SetScript("OnClick", function(self) screen.category = self.category refresh() T.PlaySound(T.SOUND_CLICK) end)
+    screen.categories[index] = button
+  end
+  screen.abilityModeGroup = CreateFrame("Frame", nil, screen)
+  screen.abilityModeGroup:SetSize(190, 28)
+  screen.abilityModeGroup:SetPoint("TOPLEFT", 402, -58)
+  screen.abilityModeGroup.checks = {}
+  for index, mode in ipairs(ABILITY_MODES) do
+    local key = mode[1]
+    local checkbox = T.CreateCheck(screen.abilityModeGroup, L[mode[2]], function(checked)
+      screen.filters.abilityModes[key] = checked
+      refresh()
+    end)
+    checkbox.key = key
+    checkbox:SetSize(20, 20)
+    checkbox:SetPoint("LEFT", (index - 1) * 90, 0)
+    checkbox:SetHitRectInsets(0, -60, 0, 0)
+    checkbox.label:SetFont(T.FONT, 11, "")
+    screen.abilityModeGroup.checks[index] = checkbox
+  end
+  screen.resetFilters = T.CreateButton(screen, L["Reset filters"], 120, 20, "default", 11)
+  screen.resetFilters:SetPoint("TOPLEFT", 106, -94)
+  screen.resetFilters:SetScript("OnClick", function()
+    screen.filters = Armory.DefaultFilters(screen.classKey)
+    screen.category = "all"
+    screen.query = ""
+    screen.search:SetText("")
+    screen.searchHint:Show()
+    refresh()
+    T.PlaySound(T.SOUND_CLICK)
+  end)
+  screen.filtersTitle = T.Text(screen, 12, T.C.muted, L["Filters"])
+  screen.filtersTitle:SetPoint("TOPLEFT", 18, -99)
+  screen.filtersPanel = CreateFrame("Frame", nil, screen)
+  screen.filtersPanel:SetSize(FILTER_W, 570)
+  screen.filtersPanel:SetPoint("TOPLEFT", 16, -120)
+  screen.filterGroups = {}
+  for _, row in ipairs({ { "specs", "Spec", 1 }, { "rarities", "Rarity", 2 }, { "tags", "Tags", 2 } }) do
+    local key = row[1]
+    local group = CreateFrame("Frame", nil, screen.filtersPanel)
+    group:SetWidth(FILTER_W)
+    group.checks, group.columns = {}, row[3]
+    group.title = T.Text(group, 12, T.C.gold, L[row[2]])
+    group.title:SetPoint("TOPLEFT", 2, -1)
+    for _, choice in ipairs({ { "all", "All", true, -40 }, { "none", "None", false, 0 } }) do
+      local button = T.CreateButton(group, L[choice[2]], 38, 18, "default", 10)
+      button:SetPoint("TOPRIGHT", choice[4], 0)
+      button:SetScript("OnClick", function()
+        screen.filters[key] = choice[3] and selected(group.options) or {}
+        refresh()
+        T.PlaySound(T.SOUND_CLICK)
+      end)
+      group[choice[1]] = button
+    end
+    screen.filterGroups[key] = group
+  end
+  local searchPanel = T.Panel(screen, "pill")
+  searchPanel:SetSize(290, 28)
+  searchPanel:SetPoint("TOPRIGHT", -16, -58)
+  screen.search = CreateFrame("EditBox", nil, searchPanel)
+  screen.search:SetPoint("TOPLEFT", 10, -2)
+  screen.search:SetPoint("BOTTOMRIGHT", -10, 2)
+  screen.search:SetAutoFocus(false)
+  screen.search:SetFont(T.FONT, 12, "")
+  screen.search:SetTextColor(T.RGB(T.C.text))
+  screen.search:SetMaxLetters(80)
+  screen.searchHint = T.Text(searchPanel, 12, T.C.dim, L["Search items"])
+  screen.searchHint:SetPoint("LEFT", 10, 0)
+  screen.search:SetScript("OnTextChanged", function(self)
+    screen.query = self:GetText() or ""
+    screen.searchHint:SetShown(screen.query == "")
+    if screen.classKey then refresh() end
+  end)
+  screen.search:SetScript("OnEscapePressed", function(self)
+    self:ClearFocus()
+    if self:GetText() ~= "" then self:SetText("") else Armory.Close() end
+  end)
+  screen.search:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+  screen.count = T.Text(screen, 12, T.C.muted)
+  screen.count:SetPoint("TOPLEFT", CARD_LEFT + 2, -99)
+  screen.empty = T.Text(screen, 14, T.C.muted, L["No items match your search."])
+  screen.empty:SetPoint("CENTER")
+  screen.cards = {}
+  for i = 1, PAGE_SIZE do screen.cards[i] = createCard(screen, i) end
+  screen.pageLabel = T.Number(screen, 13, T.C.muted)
+  screen.pageLabel:SetPoint("BOTTOM", 0, 23)
+  screen.previous = T.CreateButton(screen, L["Previous"], 100, 26, "default", 12)
+  screen.previous:SetPoint("RIGHT", screen.pageLabel, "LEFT", -24, 0)
+  screen.previous:SetScript("OnClick", function() turnPage(-1) end)
+  screen.next = T.CreateButton(screen, L["Next"], 100, 26, "default", 12)
+  screen.next:SetPoint("LEFT", screen.pageLabel, "RIGHT", 24, 0)
+  screen.next:SetScript("OnClick", function() turnPage(1) end)
+  screen:SetScript("OnMouseWheel", function(_, delta) turnPage(delta > 0 and -1 or 1) end)
+  screen:SetScript("OnHide", function()
+    screen.search:ClearFocus()
+    ns.UI.Tooltip.Hide()
+  end)
+  screen:Hide()
+end
+
+function Armory.Open(parent, classKey)
+  if not screen then create(parent) end
+  if not ns.Classes[classKey] or not ns.Classes[classKey].playable then classKey = ns.PlayableClasses()[1].key end
+  if not screen.filters then screen.filters = Armory.DefaultFilters(classKey) end
+  if screen.classKey ~= classKey then
+    screen.filters.specs = selected(specOptions(classKey))
+    local relevant = selected(tagOptions(classKey))
+    for tag in pairs(screen.filters.tags) do if not relevant[tag] then screen.filters.tags[tag] = nil end end
+  end
+  screen.classKey = classKey
+  refresh()
+  screen:Show()
+end

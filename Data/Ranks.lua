@@ -1,0 +1,3 @@
+local ADDON, ns = ...
+
+ns.Ranks.RegisterAll()

@@ -1,0 +1,75 @@
+## Interface: 120105, 16001
+## Title: Bagnon Battles
+## Notes: A backpack auto-battler with Classic classes, gear and spells. Build your bag, then fight other players' builds.
+## Author: Boopiti
+## Version: 0.2.0
+## SavedVariables: BagnonBattlesDB
+## IconTexture: Interface\Icons\INV_Misc_Bag_07_Red
+## X-Category: Miscellaneous
+## OptionalDeps: Ace3, LibSerialize, LibDeflate
+
+Libs\embeds.xml
+
+Core\Init.lua
+Core\Util.lua
+Core\Registry.lua
+Core\Grid.lua
+Core\Economy.lua
+Core\Mastery.lua
+Core\Sim.lua
+Core\Describe.lua
+Core\BuildValidation.lua
+Core\Snapshot.lua
+Core\Pool.lua
+Core\Bots.lua
+Core\Crafting.lua
+Core\Ranks.lua
+Core\Run.lua
+Core\Migrations.lua
+
+Data\Helpers.lua
+Data\Classes.lua
+Data\Bags.lua
+Data\Shared.lua
+Data\Druid.lua
+Data\Warrior.lua
+Data\Hunter.lua
+Data\HunterGear.lua
+Data\DruidGear.lua
+Data\Paladin.lua
+Data\PaladinGear.lua
+Data\Rogue.lua
+Data\RogueGear.lua
+Data\Priest.lua
+Data\PriestGear.lua
+Data\Shaman.lua
+Data\ShamanGear.lua
+Data\Mage.lua
+Data\MageGear.lua
+Data\Warlock.lua
+Data\WarlockGear.lua
+Data\ClassTalents.lua
+Data\PaladinShamanBots.lua
+Data\RoguePriestBots.lua
+Data\MageWarlockBots.lua
+Data\Sets.lua
+Data\Legendaries.lua
+Data\Atiesh.lua
+Data\Ranks.lua
+Data\Retired.lua
+
+UI\Theme.lua
+UI\Tooltip.lua
+UI\Mastery.lua
+UI\GridView.lua
+UI\Shop.lua
+UI\Battle.lua
+UI\Armory.lua
+UI\Home.lua
+UI\Dialogs.lua
+UI\MainFrame.lua
+UI\Minimap.lua
+UI\Options.lua
+
+Core\Comm.lua
+Core\Addon.lua

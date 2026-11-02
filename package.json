@@ -1,0 +1,8 @@
+{
+  "name": "bagnon-battles",
+  "private": true,
+  "scripts": {
+    "dev": "python3 -B _dev/tools/build.py --dev",
+    "build": "python3 -B _dev/tools/build.py"
+  }
+}

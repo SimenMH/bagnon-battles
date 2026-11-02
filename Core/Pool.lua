@@ -171,7 +171,7 @@ function Pool.Candidates(round, opts)
   if not bucket then return out end
   for i = 1, #bucket.list do
     local rec = bucket.list[i]
-    if not exclude[rec.id] and rec.b.n ~= opts.ownName and (opts.allowBots or not rec.bot) then
+    if not exclude[rec.id] and rec.b.n ~= opts.ownName and rec.b.n ~= opts.ownAlias and (opts.allowBots or not rec.bot) then
       out[#out + 1] = rec
     end
   end

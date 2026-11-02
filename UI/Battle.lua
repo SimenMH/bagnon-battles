@@ -362,6 +362,11 @@ local function sideName(id)
   return state.theirName
 end
 
+local function displayName(name)
+  if ns.IS_FOREVER then return (name:gsub("-", " ")) end
+  return name:match("^([^-]+)") or name
+end
+
 local function itemName(sideId, uid)
   local summary = sideId == "A" and state.result.A or state.result.B
   local info = summary.items[uid]
@@ -1636,8 +1641,8 @@ function Battle.Show(result, opponent, run)
     },
     playback = Battle.BuildPlayback(result),
     speed = ns.db and ns.db.global.settings.speed or 1,
-    myName = run.who:match("^([^-]+)") or run.who,
-    theirName = (opponent.build.n or "?"):match("^([^-]+)") or opponent.build.n,
+    myName = displayName(run.who),
+    theirName = displayName(opponent.build.n or "?"),
   }
   state.fighters = {
     A = { name = state.myName, classKey = run.class, wins = mine and mine.w or run.wins or 0, losses = mine and mine.l or run.losses or 0 },

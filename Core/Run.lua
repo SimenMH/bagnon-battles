@@ -801,7 +801,7 @@ function ns.FindOpponent(run, myId)
   local now = Util.Now()
   local exclude = Util.Set(run.recent)
   local rec = ns.Pool.Pick(run.round, {
-    now = now, exclude = exclude, ownName = run.who, wins = run.wins,
+    now = now, exclude = exclude, ownName = run.who, ownAlias = ns.Comm and ns.Comm.SelfName(run.who) or nil, wins = run.wins,
     rng = Util.NewRNG(Util.Hash32(myId .. tostring(now))),
     isOnline = ns.Comm and ns.Comm.IsOnline or nil,
   })

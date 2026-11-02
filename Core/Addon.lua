@@ -7,6 +7,7 @@ ns.Addon = Addon
 local defaults = {
   global = {
     pool = {},
+    selfNames = {},
     run = nil,
     settings = { share = true, traffic = false, minimap = { hide = false, angle = 220 }, speed = 1, debug = false, scale = 1, lastClass = "DRUID", sounds = true, soundChannel = "SFX" },
     stats = { runs = 0, gamesWon = 0, currentWinStreak = 0, bestWinStreak = 0, forgedLegendaries = 0 },
@@ -46,6 +47,11 @@ local function recordCrafts(saved, previous, stats)
 end
 
 function ns.PlayerName()
+  if ns.IS_FOREVER then
+    local name, surname = UnitFullName("player")
+    if surname and surname ~= "" then return (name or "Player") .. "-" .. surname end
+    return name or "Player"
+  end
   local name = UnitName("player")
   local realm = GetNormalizedRealmName and GetNormalizedRealmName() or (GetRealmName and GetRealmName():gsub("%s", "")) or "Realm"
   return (name or "Player") .. "-" .. realm

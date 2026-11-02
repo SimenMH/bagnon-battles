@@ -13,12 +13,14 @@ Comm.THIN_THRESHOLD = 12
 Comm.RATE_WINDOW = 60
 Comm.RATE_LIMIT = 30
 Comm.REQUEST_WINDOW = 60
+Comm.session = string.format("%08x", math.random(0, 0x7fffffff))
 
 local inbound = {}
 local lastHello = 0
 local lastRequest = 0
 local generation = 0
 local pendingRequest
+local selfNameSeen = false
 
 local function settings()
   return ns.db and ns.db.global.settings or { share = true }
@@ -88,17 +90,25 @@ local function resultSummary(result)
   return readable(result, 24)
 end
 
-local function me()
-  return Ambiguate(ns.PlayerName(), "none")
-end
-
 local function fullName(sender)
   if not sender then return "Unknown" end
-  if not sender:find("-", 1, true) then
+  if not ns.IS_FOREVER and not sender:find("-", 1, true) then
     local realm = GetNormalizedRealmName and GetNormalizedRealmName() or ""
     if realm ~= "" then return sender .. "-" .. realm end
   end
   return sender
+end
+
+local function rememberSelfName(name)
+  if selfNameSeen or not ns.db then return end
+  selfNameSeen = true
+  local localName = ns.PlayerName()
+  ns.db.global.selfNames[localName] = name ~= localName and name or nil
+end
+
+function Comm.SelfName(who)
+  local names = ns.db and ns.db.global.selfNames
+  return names and names[who]
 end
 
 local function timer(delay, fn)
@@ -215,6 +225,7 @@ end
 local function send(tbl, distribution, target, prio)
   local summary = messageSummary(tbl)
   if not settings().share then traffic("Skipped " .. summary .. ". Sharing is off.") return false end
+  tbl.k = Comm.session
   local encoded, payload = pcall(ns.Snapshot.Encode, tbl)
   if not encoded or type(payload) ~= "string" then
     traffic("Skipped " .. summary .. ". Encoding failed.")
@@ -351,10 +362,14 @@ function Comm:OnCommReceived(prefix, text, distribution, sender)
   if prefix ~= ns.PREFIX or not settings().share then return end
   local senderFull = fullName(sender)
   local source = " from " .. readable(senderFull) .. " via " .. readable(distribution, 16) .. ", " .. tostring(type(text) == "string" and #text or 0) .. " bytes."
-  if Ambiguate(senderFull, "none") == me() then traffic("Ignored own echo" .. source) return end
   if not rateOk(senderFull) then traffic("Rejected message" .. source .. " Rate limited.") return end
   local decoded, tbl = pcall(ns.Snapshot.Decode, text)
   if not decoded or type(tbl) ~= "table" then traffic("Rejected message" .. source .. " Malformed message.") return end
+  if tbl.k == Comm.session then
+    rememberSelfName(senderFull)
+    traffic("Ignored own echo" .. source)
+    return
+  end
   if tbl.p ~= ns.PROTOCOL_VERSION then traffic("Rejected message" .. source .. " Protocol version mismatch.") return end
   local now = Util.Now()
   if tbl.t == "B" and type(tbl.b) == "table" then

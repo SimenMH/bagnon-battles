@@ -51,7 +51,7 @@ ns.RegisterSet{ key = "arcanist", name = "Arcanist Regalia", bonuses = {
 ns.RegisterSet{ key = "netherwind", name = "Netherwind Regalia", bonuses = {
   [2] = { triggers = { { on = "anyUse", match = { tag = "fire" }, effects = { { type = "tickDots", match = { tag = "burn" } } } } }, text = "Fire casts immediately tick your burns." },
   [4] = { triggers = { { on = "dotTick", match = { tag = "burn" }, every = 6, effects = { { type = "cast", key = "pyroblast" } } } }, text = "Every 6 burn ticks cast your Pyroblast for free." },
-  [6] = { double = { tag = "fire" }, stats = { crit = 30, critDamage = 50 }, text = "Fire spells cast twice. Gain 30% Critical Strike and 50% Critical Strike Damage." },
+  [6] = { double = { tag = "fire" }, stats = { crit = 30, critDamage = 50 }, text = "Fire spells cast twice." },
 } }
 ns.RegisterSet{ key = "frostfire", name = "Frostfire Regalia", bonuses = {
   [2] = { triggers = { { on = "enemyStunned", match = { kind = "ability", tag = "frost" }, effects = { { type = "absorb", amount = 20, coef = 0.35 } } } }, text = "Your Frost abilities freezing the enemy grant an absorb of 20 + 35% Healing Power." },

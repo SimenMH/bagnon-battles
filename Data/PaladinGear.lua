@@ -59,12 +59,12 @@ ns.RegisterSet{ key = "lightforge", name = "Lightforge Armor", bonuses = {
 ns.RegisterSet{ key = "lawbringer", name = "Lawbringer Armor", bonuses = {
   [2] = { stats = { blockChance = 10, block = 8 } },
   [4] = { triggers = { { on = "block", effects = { { type = "absorb", fromEvent = 0.4 }, { type = "cdr", target = "all", match = { key = "holy_shield" }, amount = 0.5 } } } }, text = "Blocks shield you for 40% of the damage blocked and advance Holy Shield by 0.5s." },
-  [6] = { triggers = { { on = "block", effects = { { type = "cast", key = "judgement" }, { type = "heal", fromEvent = 0.5 } } } }, stats = { block = 20 }, text = "Blocking casts Judgement for free and heals 50% of the damage blocked. Gain 20 Block Value." },
+  [6] = { triggers = { { on = "block", effects = { { type = "cast", key = "judgement" }, { type = "heal", fromEvent = 0.5 } } } }, stats = { block = 20 }, text = "Blocking casts Judgement for free and heals 50% of the damage blocked." },
 } }
 ns.RegisterSet{ key = "judgement_armor", name = "Judgement Armor", bonuses = {
   [2] = { triggers = { { on = "anyUse", match = { key = "judgement" }, effects = { { type = "extraAttack", count = 1 } } } }, text = "Judgement grants an extra melee attack." },
   [4] = { triggers = { { on = "anyCrit", healing = false, match = { tag = "holy" }, effects = { { type = "bank", key = "paladin_seal", fraction = 0.6 } } } }, text = "Holy crits store 60% of their damage for Judgement." },
-  [6] = { double = { tag = "judgement" }, stats = { crit = 15, critDamage = 50 }, text = "Judgement hits twice. Gain 15% Critical Strike and 50% Critical Strike Damage." },
+  [6] = { double = { tag = "judgement" }, stats = { crit = 15, critDamage = 50 }, text = "Judgement hits twice." },
 } }
 ns.RegisterSet{ key = "redemption", name = "Redemption Armor", bonuses = {
   [2] = { triggers = { { on = "healed", effects = { { type = "bank", key = "paladin_holy", fraction = 0.1 } } } }, text = "Store 10% of effective healing for Holy Shock." },

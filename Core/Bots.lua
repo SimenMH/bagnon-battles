@@ -60,21 +60,61 @@ local FERAL_GEAR = {
 local BOWS = "worn_shortbow hunting_bow heavy_crossbow blackcrow carapace_spine_crossbow rhokdelar"
 local STAVES = "gnarled_staff walking_stick staff_of_jordan staff_of_dominance staff_of_the_shadow_flame"
 
+local WARRIOR_PHYSICAL = {
+  "thin_cloth_armor tanned_leather_jerkin heroism_chest wrath_chest dreadnaught_chest", "tempered_band blackstone_ring seal_of_wrynn",
+  "cape_of_the_brotherhood", "mark_of_fordring onyxia_tooth_pendant", "edgemasters_handguards",
+  "second_wind hand_of_justice", "heroism_head wrath_head", "fine_leather_boots fleetfoot_boots heroism_feet wrath_feet",
+  "wrath_shoulder dreadnaught_shoulder", "wrath_legs dreadnaught_legs", "prospectors_cuffs", "fine_leather_belt",
+}
+local WARRIOR_BERSERKER = {
+  "thin_cloth_armor tanned_leather_jerkin heroism_chest dreadnaught_chest", "tempered_band ring_of_fury seal_of_wrynn",
+  "bloodguard_emblem second_wind", "cape_of_the_brotherhood", "medallion_of_grand_marshal_morris",
+  "edgemasters_handguards", "fine_leather_boots fleetfoot_boots heroism_feet",
+  "heroism_head dreadnaught_head", "prospectors_cuffs", "fine_leather_belt", "dreadnaught_shoulder dreadnaught_legs",
+}
+local WARRIOR_BLOCK = {
+  "thin_cloth_armor might_chest", "tempered_band ring_of_fury seal_of_wrynn", "bulwark_gauntlets might_hands",
+  "medallion_of_grand_marshal_morris", "second_wind lifegiving_gem", "might_head", "might_shoulder might_legs",
+  "cape_of_the_brotherhood", "prospectors_cuffs", "fine_leather_boots might_feet", "fine_leather_belt",
+}
+local WARRIOR_AVOIDANCE = {
+  "thin_cloth_armor tanned_leather_jerkin might_chest", "tempered_band ring_of_fury seal_of_wrynn",
+  "medallion_of_grand_marshal_morris", "bulwark_gauntlets edgemasters_handguards", "second_wind bloodguard_emblem",
+  "cape_of_the_brotherhood", "prospectors_cuffs", "fine_leather_boots fleetfoot_boots", "might_head", "fine_leather_belt",
+}
+local WARRIOR_HEAVY = "spiked_club battle_axe claymore oak_mallet bonebiter arcanite_reaper fist_of_omokk shaman_earthshaker shaman_spinal_reaper"
+local WARRIOR_MAIN = "worn_axe hand_axe ironwood_mace cruel_barb skullcrusher shadowfang crescent_axe ironfoe thrash_blade krol_blade deathbringer castigator"
+local WARRIOR_OFF = "worn_dagger hand_axe ironwood_mace carving_knife twin_tomahawk cruel_barb nightblade dalrends_tribal_guardian"
+
 Bots.ARCHETYPES = {
   WARRIOR = {
     { id = "arms_bleed", spec = "arms", secondary = "fury", weapons = { "worn_axe battle_axe claymore bonebiter arcanite_reaper" },
-      core = "heroic_strike rend bloodrage mortal_strike", train = "mortal_strike rend", payoff = "mortal_strike", gear = PHYSICAL,
-      support = "deep_wounds impale overpower improved_rend flurry battle_shout improved_overpower anger_management" },
-    { id = "fury_dual", spec = "fury", secondary = "arms", weapons = { "worn_axe cruel_barb shadowfang dalrends_sacred_charge", "worn_dagger carving_knife cruel_barb nightblade dalrends_tribal_guardian" },
-      core = "heroic_strike bloodrage blood_craze bloodthirst", train = "bloodthirst heroic_strike", payoff = "bloodthirst", gear = PHYSICAL,
-      support = "flurry berserker_rage unbridled_wrath cruelty battle_shout enrage diamond_flask dual_wield_specialization" },
-    { id = "protection", spec = "prot", secondary = "arms", weapons = { "worn_axe cruel_barb shadowfang ironfoe" },
-      equipment = "wooden_shield crest_of_retribution drillborer_disk", core = "heroic_strike bloodrage shield_block revenge shield_slam", train = "shield_slam revenge", payoff = "shield_slam",
-      gear = { "thin_cloth_armor might_chest", "ring_of_fury seal_of_wrynn", "medallion_of_grand_marshal_morris", "second_wind lifegiving_gem", "might_head", "might_hands", "cape_of_the_brotherhood", "prospectors_cuffs", "fine_leather_boots", "fine_leather_belt" },
-      support = "defensive_stance defiance improved_shield_block shield_wall shield_bash iron_will" },
-    { id = "bleed_fury", spec = "fury", secondary = "arms", hybrid = true, weapons = { "worn_axe cruel_barb dalrends_sacred_charge", "worn_dagger carving_knife nightblade dalrends_tribal_guardian" },
-      core = "rend heroic_strike bloodrage bloodthirst", train = "bloodthirst rend", payoff = "bloodthirst", gear = PHYSICAL,
-      support = "deep_wounds flurry impale blood_craze cruelty berserker_rage improved_rend" },
+      core = "heroic_strike rend bloodrage deep_wounds", train = "rend heroic_strike", supportTrain = "battle_shout", payoff = "rend", gear = WARRIOR_PHYSICAL,
+      support = "impale improved_rend axe_specialization battle_shout battle_stance anger_management" },
+    { id = "fury_dual", spec = "fury", secondary = "arms", weapons = { WARRIOR_MAIN, WARRIOR_OFF },
+      core = "heroic_strike bloodrage bloodthirst", train = "bloodthirst heroic_strike", supportTrain = "battle_shout blood_craze", payoff = "bloodthirst", gear = WARRIOR_PHYSICAL,
+      support = "flurry berserker_rage unbridled_wrath blood_craze battle_shout booming_voice dual_wield_specialization one_handed_weapon_specialization" },
+    { id = "protection", spec = "prot", secondary = "arms", weapons = { WARRIOR_MAIN },
+      equipment = "wooden_shield shaman_redbeard_crest crest_of_retribution drillborer_disk", core = "bloodrage shield_bash shield_slam revenge shield_block", train = "shield_slam shield_bash", supportTrain = "shield_block", payoff = "shield_slam",
+      gear = WARRIOR_BLOCK, support = "defensive_stance defiance improved_shield_block shield_wall iron_will toughness improved_shield_bash" },
+    { id = "fury_berserker", minRound = 4, spec = "fury", secondary = "arms", weapons = { WARRIOR_MAIN, WARRIOR_OFF },
+      core = "bloodrage heroic_strike whirlwind execute", train = "whirlwind heroic_strike", supportTrain = "blood_craze berserker_stance", payoff = "whirlwind", gear = WARRIOR_BERSERKER,
+      support = "death_wish blood_craze berserker_rage berserker_stance improved_bloodrage flurry recklessness intimidating_shout" },
+    { id = "arms_mortal", minRound = 2, spec = "arms", secondary = "fury", weapons = { WARRIOR_HEAVY },
+      core = "heroic_strike bloodrage mortal_strike overpower", train = "mortal_strike overpower", supportTrain = "battle_shout", payoff = "mortal_strike", gear = WARRIOR_PHYSICAL,
+      support = "deep_wounds impale improved_overpower sunder_armor battle_stance battle_shout two_handed_weapon_specialization" },
+    { id = "arms_heavy", minRound = 3, spec = "arms", secondary = "fury", weapons = { WARRIOR_HEAVY },
+      core = "bloodrage slam intercept sunder_armor", train = "slam intercept", supportTrain = "battle_shout battle_stance", payoff = "slam", gear = WARRIOR_PHYSICAL,
+      support = "two_handed_weapon_specialization tactical_mastery battle_stance battle_shout berserker_rage intimidating_shout" },
+    { id = "fury_heavy", minRound = 2, spec = "fury", secondary = "arms", weapons = { WARRIOR_HEAVY },
+      core = "bloodrage cleave slam", train = "cleave slam", supportTrain = "battle_shout improved_cleave", payoff = "cleave", gear = WARRIOR_PHYSICAL,
+      support = "improved_cleave improved_slam two_handed_weapon_specialization berserker_rage enrage battle_shout booming_voice" },
+    { id = "prot_counter", minRound = 2, spec = "prot", secondary = "arms", weapons = { WARRIOR_MAIN },
+      equipment = "wooden_shield duelists_buckler crest_of_retribution drillborer_disk", core = "bloodrage shield_bash revenge thunder_clap deflection", train = "shield_bash revenge", supportTrain = "deflection warrior_anticipation", payoff = "shield_bash", gear = WARRIOR_AVOIDANCE,
+      support = "warrior_anticipation improved_revenge one_handed_weapon_specialization improved_shield_bash intimidating_shout shield_block toughness defensive_stance" },
+    { id = "prot_bleed", minRound = 2, spec = "prot", secondary = "arms", weapons = { WARRIOR_MAIN },
+      equipment = "wooden_shield shaman_redbeard_crest crest_of_retribution drillborer_disk", core = "bloodrage shield_bash rend sunder_armor", train = "rend shield_bash", supportTrain = "battle_shout", payoff = "rend", gear = WARRIOR_BLOCK,
+      support = "defensive_stance improved_rend deep_wounds defiance battle_shout improved_shield_bash shield_block toughness" },
   },
   HUNTER = {
     { id = "cat_focus", spec = "bm", secondary = "mm", weapons = { BOWS }, core = "rough_arrows pet_cat claw_pet feed_pet arcane_shot", train = "claw_pet arcane_shot", payoff = "claw_pet", gear = HUNTER_GEAR,
@@ -117,10 +157,100 @@ local function relation(source, target)
   return score
 end
 
+local function hasSpatialRules(def)
+  for _, rule in ipairs(def.adjacency) do if rule.side or rule.corners or rule.empty then return true end end
+  return false
+end
+
+local function placementOrder(a, b)
+  if a.x ~= b.x then return a.x < b.x end
+  if a.y ~= b.y then return a.y < b.y end
+  if a.id ~= b.id then return a.id < b.id end
+  return (a.rot or 0) < (b.rot or 0)
+end
+
+local function spatialLayoutScore(grid, probe, formAttack)
+  local score, ownLink = 0, false
+  local function active(p)
+    local def = ns.Items[p.id]
+    return not (formAttack and def.kind == "weapon" and not ranged(def))
+  end
+  for _, source in ipairs(grid.items) do
+    if active(source) then
+      local def = ns.Items[source.id]
+      for _, rule in ipairs(def.adjacency) do
+        local matches = 0
+        if rule.empty then
+          matches = #grid:EffectCells(source, rule)
+          if rule.once then matches = math.min(1, matches) end
+        elseif not rule.inside then
+          local recipients = grid:EffectNeighbors(source, rule)
+          table.sort(recipients, placementOrder)
+          for _, recipient in ipairs(recipients) do
+            if active(recipient) and Util.MatchDef(ns.Items[recipient.id], rule.match) then
+              matches = matches + 1
+              if rule.once then break end
+            end
+          end
+        end
+        score = score + matches * 16
+        if source == probe and matches > 0 then ownLink = true end
+      end
+      for _, recipient in ipairs(grid:EffectNeighbors(source)) do
+        if active(recipient) then
+          local target = ns.Items[recipient.id]
+          for _, trigger in ipairs(def.triggers) do
+            if trigger.on:find("adjacent", 1, true) and Util.MatchDef(target, trigger.match) then
+              score = score + 16
+              if source == probe then ownLink = true end
+            end
+            for _, effect in ipairs(trigger.effects) do
+              if effect.target == "neighbors" and Util.MatchDef(target, effect.match)
+                and ((effect.type ~= "cdr" and effect.type ~= "cast") or target.use) then
+                score = score + 16
+                if source == probe then ownLink = true end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  return score, ownLink
+end
+
+local function placementProbe(grid, def, x, y, rot)
+  local probe = { id = def.id, uid = grid.nextUid, x = x, y = y, rot = rot, cells = {} }
+  local view = setmetatable({ W = grid.W, H = grid.H, cells = grid.cells, occ = {}, items = {}, bags = grid.bags }, getmetatable(grid))
+  for key, p in pairs(grid.occ) do view.occ[key] = p end
+  for _, p in ipairs(grid.items) do view.items[#view.items + 1] = p end
+  for _, cell in ipairs(ns.Grid.Footprint(def, x, y, rot)) do
+    local key = ns.Grid.Key(cell[1], cell[2])
+    probe.cells[#probe.cells + 1], view.occ[key] = key, probe
+  end
+  view.items[#view.items + 1] = probe
+  return view, probe
+end
+
+-- Developer tooling also exercises this candidate score directly. Comparing
+-- layouts includes lost empty-space bonuses and incoming directional supports.
+function Bots.PlacementScore(grid, def, x, y, rot)
+  local formAttack = false
+  for _, p in ipairs(grid.items) do if ns.Items[p.id].replacesWeapon then formAttack = true break end end
+  local before = spatialLayoutScore(grid, nil, formAttack)
+  local view, probe = placementProbe(grid, def, x, y, rot)
+  local after, ownLink = spatialLayoutScore(view, probe, formAttack)
+  return after - before, ownLink
+end
+
 local function placeNear(grid, def, rng)
   local best, choices, evaluated = nil, {}, 0
   local formAttack = false
   for _, p in ipairs(grid.items) do if ns.Items[p.id].replacesWeapon then formAttack = true break end end
+  local spatial = hasSpatialRules(def)
+  if not spatial then
+    for _, p in ipairs(grid.items) do if hasSpatialRules(ns.Items[p.id]) then spatial = true break end end
+  end
   local linked, autonomous = #def.adjacency > 0, false
   for _, trigger in ipairs(def.triggers) do
     local adjacent = trigger.on:find("adjacent", 1, true)
@@ -139,14 +269,15 @@ local function placeNear(grid, def, rng)
       local x, y = cell[1], cell[2]
       if grid:CanPlaceItem(def, x, y, rot) then
         evaluated = evaluated + 1
-        local probe = { id = def.id, cells = {} }
+        local probe = { id = def.id, uid = grid.nextUid, x = x, y = y, rot = rot, cells = {} }
         for _, c in ipairs(ns.Grid.Footprint(def, x, y, rot)) do probe.cells[#probe.cells + 1] = ns.Grid.Key(c[1], c[2]) end
         local neighbors = grid:EffectNeighbors(probe)
         local score, ownLink = 0, false
+        if spatial then score, ownLink = Bots.PlacementScore(grid, def, x, y, rot) end
         for _, other in ipairs(neighbors) do
           local otherDef = ns.Items[other.id]
           local inactive = formAttack and otherDef.kind == "weapon" and not ranged(otherDef)
-          if not inactive then
+          if not spatial and not inactive then
             local forward = relation(def, otherDef)
             score = score + (forward + relation(otherDef, def)) * 8
             if forward > 0 then ownLink = true end
@@ -180,7 +311,11 @@ local function flagsFor(grid)
     local def = ns.Items[p.id]
     local provides = type(def.provides) == "table" and def.provides or { def.provides }
     for _, flag in ipairs(provides) do flags[flag] = true end
-    if def.kind == "weapon" then flags.weapon = true flags[ranged(def) and "ranged" or "melee"] = true end
+    if def.kind == "weapon" then
+      flags.weapon = true
+      flags[ranged(def) and "ranged" or "melee"] = true
+      if not ranged(def) and def.hands == 2 then flags.twohand = true end
+    end
     if def.kind == "shield" then flags.shield = true end
     if def.kind == "pet" then flags.pet = true end
     if def.kind == "ammo" then flags.ammo = true end
@@ -210,6 +345,15 @@ function Bots.Generate(classKey, round, seed, archetypeId)
   local budget = math.floor(ns.Economy.CumulativeGold(round) * (0.77 + rng:Next() * 0.12 - 0.10 * math.max(0, 8 - round) / 7)) + ns.StarterValue(class)
   local gold, grid = budget, ns.Grid.New()
   local desiredRank = round >= 10 + rng:Range(0, 3) and rng:Chance(65) and 3 or round >= 4 + rng:Range(0, 3) and 2 or 1
+  if classKey == "WARRIOR" then
+    local base = ns.ItemsByKey[words(plan.train)[1]]
+    desiredRank = 1
+    for rank = 2, ns.Ranks.MaxRank(base) do
+      local target = ns.Ranks.Definition(base, rank)
+      if target and target.minRound <= round then desiredRank = rank end
+    end
+    if desiredRank > 2 and rng:Chance(25) then desiredRank = desiredRank - 1 end
+  end
   local supportLimit = math.min(6, 1 + math.floor(round / 3))
   local gear = Util.ShallowCopy(plan.gear)
   local function eligible(def)
@@ -359,13 +503,19 @@ function Bots.Generate(classKey, round, seed, archetypeId)
     else tryAdd(ns.ItemsByKey[key]) end
   end
   for index = 1, math.min(2, #gear) do add(gear[index]) end
+  local trainingSpent = 0
   local function train(key, rank)
     for _, p in ipairs(grid.items) do
       local current = ns.Items[p.id]
       if (current.baseKey or current.key) == key then
         local target = ns.Ranks.Definition(current, rank)
         local price = ns.Ranks.TrainingCost(current, rank)
-        if target and (current.rank or 1) < rank and target.minRound <= round and price <= gold then p.id = target.id gold = gold - price return true end
+        if target and (current.rank or 1) + 1 == rank and rank <= ns.Ranks.MaxRank(current)
+          and target.minRound <= round and price <= gold then
+          p.id, gold = target.id, gold - price
+          trainingSpent = trainingSpent + price
+          return true
+        end
       end
     end
     return false
@@ -395,7 +545,31 @@ function Bots.Generate(classKey, round, seed, archetypeId)
   for index = 3, #gear do remainingGear[#remainingGear + 1] = gear[index] end
   rng:Shuffle(remainingGear)
   for _, options in ipairs(remainingGear) do if rng:Chance(88) then add(options) end end
-  if round >= 10 and rng:Chance(35) and training[2] then train(training[2], 2) end
+  if classKey == "WARRIOR" then
+    if round >= 6 and training[2] and rng:Chance(55) and train(training[2], 2) and round >= 12 and rng:Chance(35) then train(training[2], 3) end
+    if round >= 7 and rng:Chance(60) then
+      for _, key in ipairs(words(plan.supportTrain)) do if train(key, 2) then break end end
+    end
+    -- A mature fixture spends affordable training gold before hoarding it.
+    -- Limit this to its authored cores and one support, rather than filling the
+    -- bag with extra spenders or inventing free equipment/rank upgrades.
+    if round >= 10 then
+      local function finishTraining(key)
+        for _, p in ipairs(grid.items) do
+          local def = ns.Items[p.id]
+          if (def.baseKey or def.key) == key then
+            for rank = (def.rank or 1) + 1, ns.Ranks.MaxRank(def) do
+              if not train(key, rank) then break end
+            end
+            return true
+          end
+        end
+        return false
+      end
+      for _, key in ipairs(training) do finishTraining(key) end
+      for _, key in ipairs(words(plan.supportTrain)) do if finishTraining(key) then break end end
+    end
+  elseif round >= 10 and rng:Chance(35) and training[2] then train(training[2], 2) end
   local talents = ns.Mastery.Empty(classKey)
   local points, primary = ns.Mastery.Budget(round), ns.Mastery.Budget(round)
   local counts = ns.Economy.StockCounts(grid)
@@ -415,7 +589,7 @@ function Bots.Generate(classKey, round, seed, archetypeId)
   return {
     v = ns.PROTOCOL_VERSION, d = ns.DATA_VERSION, c = class.id, r = round, w = wins, l = losses,
     s = Util.Now(), n = rng:Pick(Bots.NAMES), g = bags, i = items, b = home, p = ns.Mastery.Pack(classKey, talents), bot = true,
-  }, grid, { archetype = plan.id, budget = budget, spent = budget - gold, remaining = gold }
+  }, grid, { archetype = plan.id, budget = budget, spent = budget - gold, remaining = gold, trainingSpent = trainingSpent }
 end
 
 function Bots.Opponent(round, seed)

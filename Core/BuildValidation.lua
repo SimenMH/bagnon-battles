@@ -47,7 +47,7 @@ function BuildValidation.Check(classDef, round, grid, build)
         date = obtainable(base)
         if date then date = math.max(date, def.minRound) end
         for rank = 2, def.rank do
-          local rule = ns.Ranks.TRAINING[rank]
+          local rule = ns.Ranks.TrainingRule(base, rank)
           if not rule then date = nil break end
           if date then date = math.max(date, rule.minRound) end
         end
@@ -131,7 +131,7 @@ function BuildValidation.Check(classDef, round, grid, build)
     local cost
     if def.rank then
       local base = ns.ItemsByKey[def.baseKey]
-      local training = math.min(ns.Ranks.Investment(base, def.rank) - base.cost, ns.Ranks.LEGACY_TRAINING[def.rank])
+      local training = math.min(ns.Ranks.Investment(base, def.rank) - base.cost, ns.Ranks.LegacyTrainingCost(base, def.rank))
       local purchase = shopPrice(base)
       local resale = math.ceil((base.cost + training) / 2)
       cost = purchase + training + math.min(0, purchase - resale)

@@ -413,8 +413,124 @@ function Grid:ItemInsideBag(p, bag)
   return true
 end
 
-function Grid:EffectNeighbors(p)
-  return self:AdjacentItems(p)
+local EFFECT_SIDES = {
+  front = { 0, -1 }, back = { 0, 1 }, left = { -1, 0 }, right = { 1, 0 },
+}
+local DIAGONALS = { { -1, -1 }, { 1, -1 }, { -1, 1 }, { 1, 1 } }
+
+-- This validates spatial selectors only. Effect payloads/matches are checked by
+-- the registry. Existing adjacency and bag-inside rules need no new selectors.
+local EFFECT_RULE_FIELDS = { side = true, corners = true, empty = true, inside = true, once = true,
+  match = true, mods = true, selfMods = true, stats = true }
+
+function Grid.ValidateEffectRule(rule)
+  if rule == nil then return true end
+  if type(rule) ~= "table" then return false, "spatial rule must be a table" end
+  for field in pairs(rule) do
+    if not EFFECT_RULE_FIELDS[field] then return false, "unknown spatial field " .. tostring(field) end
+  end
+  if rule.side ~= nil and not EFFECT_SIDES[rule.side] then return false, "unknown spatial side" end
+  if rule.corners ~= nil and type(rule.corners) ~= "boolean" then return false, "corners must be boolean" end
+  if rule.empty ~= nil and type(rule.empty) ~= "boolean" then return false, "empty must be boolean" end
+  if rule.side and rule.corners then return false, "side and corners cannot be combined" end
+  if rule.inside and (rule.side or rule.corners or rule.empty) then
+    return false, "inside cannot be combined with spatial selectors"
+  end
+  if rule.empty and (rule.mods or rule.match) then
+    return false, "empty-cell rules cannot target or match recipients"
+  end
+  return true
+end
+
+local function effectCells(grid, p, rule)
+  local valid, problem = Grid.ValidateEffectRule(rule)
+  assert(valid, problem)
+  rule = rule or {}
+  local own, selected = {}, {}
+  for _, cell in ipairs(p.cells) do own[cell] = true end
+  local function add(x, y)
+    if grid:InBounds(x, y) then
+      local cell = key(x, y)
+      if not own[cell] and grid.cells[cell] ~= nil then selected[cell] = true end
+    end
+  end
+  if rule.side then
+    local direction = EFFECT_SIDES[rule.side]
+    local dx, dy = direction[1], direction[2]
+    local rot = p.rot or 0
+    assert(type(rot) == "number" and rot == math.floor(rot) and rot >= 0 and rot <= 3, "invalid effect orientation")
+    for _ = 1, rot do dx, dy = -dy, dx end
+
+    -- A side reads the visible silhouette: one outward cell beyond the furthest
+    -- footprint cell on each parallel ray. Recessed outer notches are included;
+    -- cavity faces hidden behind another footprint cell on that ray are not.
+    local edge = {}
+    for _, cell in ipairs(p.cells) do
+      local x, y = cell % 100, math.floor(cell / 100)
+      local ray, projection = dx * y - dy * x, dx * x + dy * y
+      if not edge[ray] or projection > edge[ray].projection then
+        edge[ray] = { x = x, y = y, projection = projection }
+      end
+    end
+    for _, cell in pairs(edge) do add(cell.x + dx, cell.y + dy) end
+  else
+    local directions = rule.corners and DIAGONALS or DIRS
+    for _, cell in ipairs(p.cells) do
+      local x, y = cell % 100, math.floor(cell / 100)
+      for _, direction in ipairs(directions) do add(x + direction[1], y + direction[2]) end
+    end
+    if rule.corners then
+      -- A diagonal cell that also touches any footprint edge is an edge cell.
+      for _, cell in ipairs(p.cells) do
+        local x, y = cell % 100, math.floor(cell / 100)
+        for _, direction in ipairs(DIRS) do selected[key(x + direction[1], y + direction[2])] = nil end
+      end
+    end
+  end
+  local out = {}
+  for cell in pairs(selected) do
+    if not rule.empty or not grid.occ[cell] then out[#out + 1] = cell end
+  end
+  table.sort(out)
+  return out
+end
+
+-- Returns sorted Grid.Key values in usable bag space. For empty rules these are
+-- the satisfied empty cells; otherwise they are the potential recipient cells.
+-- This is a neighbor-region query; bag-inside payloads retain their existing path.
+function Grid:EffectCells(p, rule)
+  return effectCells(self, p, rule)
+end
+
+function Grid:EffectNeighbors(p, rule)
+  local valid, problem = Grid.ValidateEffectRule(rule)
+  assert(valid, problem)
+  if not rule or not rule.side and not rule.corners and not rule.empty then
+    return self:AdjacentItems(p)
+  end
+  local cells = effectCells(self, p, rule)
+  if rule.empty then return {} end
+  local seen, excluded, out = { [p] = true }, {}, {}
+  if rule.corners then
+    -- A large item touching both an edge and a diagonal is not corner-only.
+    for _, other in ipairs(self:AdjacentItems(p)) do excluded[other] = true end
+  end
+  for _, cell in ipairs(cells) do
+    local other = self.occ[cell]
+    if other and not seen[other] and not excluded[other] then
+      seen[other] = true
+      out[#out + 1] = other
+    end
+  end
+  table.sort(out, function(a, b) return a.uid < b.uid end)
+  return out
+end
+
+-- Spatial selection only: callers filter matches/suppressed recipients and apply
+-- once/caps. Empty rules count cells, other rules count distinct placements.
+function Grid:ResolveEffect(p, rule)
+  local cells, neighbors = self:EffectCells(p, rule), self:EffectNeighbors(p, rule)
+  return { cells = cells, neighbors = neighbors, count = rule and rule.empty and #cells or #neighbors }
 end
 
 function Grid:CellList()

@@ -5,11 +5,11 @@ local SHAMAN = { "SHAMAN" }
 
 H.Weapon{ id = 7400, key = "shaman_crescent_staff", name = "Crescent Staff", icon = I("inv_staff_04"), quality = 3, cost = 6, minRound = 2, classes = SHAMAN, weaponType = "staff", hands = 2, weaponMin = 8, weaponMax = 13, speed = 3.0, stats = { sp = 14, healing = 12, hp = 25 } }
 H.Weapon{ id = 7401, key = "shaman_emberstone_staff", name = "Emberstone Staff", icon = I("inv_staff_13"), quality = 3, cost = 7, minRound = 3, classes = SHAMAN, weaponType = "staff", hands = 2, weaponMin = 9, weaponMax = 15, speed = 2.9, stats = { sp = 24, mana = 25 } }
-H.Weapon{ id = 7402, key = "fist_of_omokk", name = "Fist of Omokk", icon = I("inv_hammer_04"), quality = 3, cost = 9, minRound = 5, classes = SHAMAN, weaponType = "mace", hands = 2, weaponMin = 21, weaponMax = 31, speed = 3.6, stats = { ap = 28, hp = 45 } }
-H.Weapon{ id = 7403, key = "shaman_earthshaker", name = "Earthshaker", icon = I("inv_hammer_04"), quality = 4, cost = 12, minRound = 9, classes = SHAMAN, weaponType = "mace", hands = 2, weaponMin = 27, weaponMax = 39, speed = 3.5, stats = { ap = 36, crit = 4 },
+H.Weapon{ id = 7402, key = "fist_of_omokk", name = "Fist of Omokk", icon = I("inv_hammer_04"), quality = 3, cost = 9, minRound = 5, classes = H.PHYSICAL_MACE, weaponType = "mace", hands = 2, weaponMin = 21, weaponMax = 31, speed = 3.6, stats = { ap = 28, hp = 45 } }
+H.Weapon{ id = 7403, key = "shaman_earthshaker", name = "Earthshaker", icon = I("inv_hammer_04"), quality = 4, cost = 12, minRound = 9, classes = H.PHYSICAL_MACE, weaponType = "mace", hands = 2, weaponMin = 27, weaponMax = 39, speed = 3.5, stats = { ap = 36, crit = 4 },
   triggers = { { on = "hit", chance = 12, effects = { { type = "stun", duration = 0.7 } } } } }
-H.Weapon{ id = 7404, key = "shaman_spinal_reaper", name = "Spinal Reaper", icon = I("inv_axe_09"), quality = 4, cost = 13, minRound = 11, classes = SHAMAN, weaponType = "axe", hands = 2, weaponMin = 30, weaponMax = 44, speed = 3.8, stats = { ap = 45, crit = 5 } }
-ns.RegisterItem{ id = 7407, key = "shaman_redbeard_crest", name = "Redbeard Crest", icon = I("inv_shield_02"), kind = "shield", quality = 2, cost = 5, minRound = 2, classes = SHAMAN, shape = S.sq, stats = { armor = 20, block = 9, blockChance = 26, hp = 25 } }
+H.Weapon{ id = 7404, key = "shaman_spinal_reaper", name = "Spinal Reaper", icon = I("inv_axe_09"), quality = 4, cost = 13, minRound = 11, classes = H.ALL_AXE, weaponType = "axe", hands = 2, weaponMin = 30, weaponMax = 44, speed = 3.8, stats = { ap = 45, crit = 5 } }
+ns.RegisterItem{ id = 7407, key = "shaman_redbeard_crest", name = "Redbeard Crest", icon = I("inv_shield_02"), kind = "shield", quality = 2, cost = 5, minRound = 2, classes = H.ALL_SHIELD, shape = S.sq, stats = { armor = 20, block = 9, blockChance = 26, hp = 25 } }
 H.Armor{ id = 7411, key = "shaman_turtle_scale_gloves", name = "Turtle Scale Gloves", icon = I("inv_gauntlets_05"), quality = 2, cost = 5, minRound = 2, classes = SHAMAN, armorType = "mail", slot = "hands", stats = { armor = 10, healing = 18, mana = 20 } }
 H.Armor{ id = 7412, key = "shaman_black_dragonscale_breastplate", name = "Black Dragonscale Breastplate", icon = I("inv_chest_plate06"), quality = 3, cost = 9, minRound = 5, classes = SHAMAN, armorType = "mail", slot = "chest", stats = { ap = 52, crit = 5, armor = 30, hp = 45 } }
 H.Armor{ id = 7413, key = "shaman_green_dragonscale_breastplate", name = "Green Dragonscale Breastplate", icon = I("inv_chest_chain_06"), quality = 3, cost = 8, minRound = 4, classes = SHAMAN, armorType = "mail", slot = "chest", stats = { healing = 46, regen = 3, armor = 22, hp = 40 } }
@@ -33,7 +33,7 @@ ns.RegisterSet{ key = "the_elements", name = "The Elements", bonuses = {
 ns.RegisterSet{ key = "earthfury", name = "The Earthfury", bonuses = {
   [2] = { triggers = { { on = "regularHit", match = { tag = "melee" }, every = 3, effects = { { type = "resource", resource = "mana", amount = 8 } } } }, text = "Every third melee weapon hit restores 8 Mana." },
   [4] = { triggers = { { on = "anyUse", match = { key = "stormstrike" }, effects = { { type = "cast", key = "earth_shock" } } } }, text = "Stormstrike casts Earth Shock for free." },
-  [6] = { double = { tag = "melee" }, stats = { lifesteal = 15, ap = 30 }, text = "Melee attacks hit twice. Gain 30 Attack Power and 15% Lifesteal." },
+  [6] = { double = { tag = "melee" }, stats = { lifesteal = 15, ap = 30 }, text = "Melee attacks hit twice." },
 } }
 ns.RegisterSet{ key = "ten_storms", name = "The Ten Storms", bonuses = {
   [2] = { triggers = { { on = "anyCrit", healing = false, match = { tag = "spell" }, effects = { { type = "resource", resource = "mana", amount = 8 } } } }, text = "Spell crits restore 8 Mana." },

@@ -20,9 +20,10 @@ local STAT_ORDER = { "hp", "hpPct", "armor", "ap", "sp", "healing", "crit", "cri
 local DAMAGE_SCHOOLS = { magic = "magic", physical = "physical", fire = "Fire", frost = "Frost", nature = "Nature", shadow = "Shadow", holy = "Holy", arcane = "Arcane" }
 
 local MOD_LABELS = { dmgPct = "damage", healPct = "healing", crit = "critical strike chance", haste = "speed", costPct = "cost", cdPct = "cooldown", flat = "damage per hit", ammoEffectPct = "damage and debuff strength" }
+local ADJACENT_MOD_LABELS = { haste = "Haste" }
 
 local function fmtNum(v)
-  return (string.format("%.1f", v):gsub("%.0$", ""))
+  return (string.format("%.2f", v):gsub("0+$", ""):gsub("%.$", ""))
 end
 
 local function fmtScalar(v)
@@ -208,13 +209,23 @@ local function bankCap(e)
   return " Maximum stored: " .. table.concat(parts, " + ") .. "."
 end
 
-local function describeDamage(e, trigger)
+-- Small additive rolls clutter the compact formula. This changes presentation
+-- only: Shift retains every nonzero term, and flat-only attacks stay explicit.
+local function showFlatDamage(low, high, scaled, details)
+  if low == nil then return false end
+  high = high or low
+  if low == 0 and high == 0 and scaled then return false end
+  return details ~= false or not scaled or low < 0 or high > 5
+end
+
+local function describeDamage(e, trigger, details)
   if e.consumeDebuff and not e.min and not e.weapon and not e.weaponSelf and not e.coef then
     return string.format("Consumes %s, dealing %s %s damage per stack.", statusName(e.consumeDebuff), fmtNum(e.perDebuffStack or 1), SCHOOL_LABELS[e.school or "physical"])
   end
   local school = SCHOOL_LABELS[e.school or "physical"]
   local s = ""
-  if e.min then s = string.format("%d-%d %s damage", e.min, e.max or e.min, school) end
+  local scaled = e.weaponSelf or e.weapon or (e.coef or 0) >= 0.1 or e.fromEvent or e.blockScale or e.spendBank or e.perPoint
+  if showFlatDamage(e.min, e.max, scaled, details) then s = string.format("%d-%d %s damage", e.min, e.max or e.min, school) end
   if e.weaponSelf or e.weapon then
     local w = e.weaponPct and string.format("%s%% weapon damage", fmtNum(e.weaponPct * 100)) or "weapon damage"
     s = s ~= "" and (w .. " + " .. s) or w
@@ -239,7 +250,12 @@ local function describeDamage(e, trigger)
   end
   if e.blockScale then out = out .. string.format(" + %s%% Block Value", fmtNum(e.blockScale * 100)) end
   if e.coef and e.coef > 0 then
-    out = out .. string.format(" (+%s%% %s)", fmtScalar(e.coef * 100), STAT_LABELS[e.powerStat or ((e.school or "physical") == "physical" and "ap" or "sp")])
+    local power = STAT_LABELS[e.powerStat or ((e.school or "physical") == "physical" and "ap" or "sp")]
+    if s == "" and not e.fromEvent and not e.perPoint and not e.consumeDebuff and not e.spendBank and not e.blockScale then
+      out = string.format("Deals %s damage equal to %s%% of your %s", school, fmtScalar(e.coef * 100), power)
+    else
+      out = out .. string.format(" (+%s%% %s)", fmtScalar(e.coef * 100), power)
+    end
   end
   if e.scaleMissing then out = out .. string.format(", up to %d%% more based on the enemy's missing health", e.scaleMissing * 100) end
   if e.perStatus then out = out .. string.format(", +%d%% per damage-over-time effect on the enemy", e.perStatus * 100) end
@@ -263,7 +279,7 @@ end
 
 local function describeEffect(e, trigger, details, context)
   local t = e.type
-  if t == "damage" then return describeDamage(e, trigger)
+  if t == "damage" then return describeDamage(e, trigger, details)
   elseif t == "heal" then
     local s = e.min and string.format("%d-%d", e.min, e.max or e.min) or ""
     if e.pctMax then s = s .. (s ~= "" and " + " or "") .. string.format("%s%% max health", fmtScalar(e.pctMax * 100)) end
@@ -274,12 +290,15 @@ local function describeEffect(e, trigger, details, context)
     if e.consumeHots then
       out = out .. (s ~= "" and " plus " or "") .. "100% of the remaining healing over time on you, consuming those effects"
     end
-    if e.coef and e.coef > 0 then out = out .. string.format(" (+%s%% Healing Power)", fmtScalar(e.coef * 100)) end
+    if e.coef and e.coef > 0 then out = out .. string.format(" (+%s%% %s)", fmtScalar(e.coef * 100), STAT_LABELS[e.powerStat or "healing"]) end
     return out .. "."
   elseif t == "dot" then
     if e.stack and (e.uncapped or e.decayStacks or e.rampStacks) then
+      local showFlat = showFlatDamage(e.tick, nil, (e.coef or 0) >= 0.1, details)
       local out = string.format("Deals %s %s damage per stack every sec. for %s sec.", fmtNum(e.tick), SCHOOL_LABELS[e.school or "physical"], fmtNum(e.duration))
-      if e.coef and e.coef > 0 then out = out .. string.format(" (+%s%% %s per stack)", fmtScalar(e.coef * 100), STAT_LABELS[e.powerStat or ((e.school or "physical") == "physical" and "ap" or "sp")]) end
+      if not showFlat then out = string.format("Deals %s damage equal to %s%% of your %s per stack every sec. for %s sec.",
+        SCHOOL_LABELS[e.school or "physical"], fmtScalar((e.coef or 0) * 100), STAT_LABELS[e.powerStat or ((e.school or "physical") == "physical" and "ap" or "sp")], fmtNum(e.duration))
+      elseif e.coef and e.coef > 0 then out = out .. string.format(" (+%s%% %s per stack)", fmtScalar(e.coef * 100), STAT_LABELS[e.powerStat or ((e.school or "physical") == "physical" and "ap" or "sp")]) end
       if e.stacksFromEvent then out = string.format("Applies 1 stack per %s %s. ", fmtNum(1 / e.stacksFromEvent), e.fromCriticalDamage and "direct critical damage" or "damage dealt") .. out end
       if e.decayStacks then out = out .. string.format(" Loses %s stacks per tick.", fmtNum(e.decayStacks)) end
       if e.rampStacks then out = out .. string.format(" Gains %s stack%s every %s ticks.", fmtNum(e.rampStacks), e.rampStacks == 1 and "" or "s", fmtNum(e.rampEvery or 1)) end
@@ -302,8 +321,11 @@ local function describeEffect(e, trigger, details, context)
     if e.rolling and e.fromEvent then
       return string.format("Adds %s%% of %s as %s damage over %ds.", fmtNum(e.fromEvent * 100), eventAmountLabel(trigger), SCHOOL_LABELS[e.school or "physical"], e.duration)
     end
+    local showFlat = showFlatDamage(e.tick, nil, (e.coef or 0) >= 0.1, details)
     local out = string.format("Deals %d %s damage every second for %d seconds", e.tick, SCHOOL_LABELS[e.school or "physical"], e.duration)
-    if e.coef and e.coef > 0 then out = out .. string.format(" (+%s%% %s per tick)", fmtScalar(e.coef * 100), STAT_LABELS[e.powerStat or ((e.school or "physical") == "physical" and "ap" or "sp")]) end
+    if not showFlat then out = string.format("Deals %s damage equal to %s%% of your %s every second for %d seconds",
+      SCHOOL_LABELS[e.school or "physical"], fmtScalar((e.coef or 0) * 100), STAT_LABELS[e.powerStat or ((e.school or "physical") == "physical" and "ap" or "sp")], e.duration)
+    elseif e.coef and e.coef > 0 then out = out .. string.format(" (+%s%% %s per tick)", fmtScalar(e.coef * 100), STAT_LABELS[e.powerStat or ((e.school or "physical") == "physical" and "ap" or "sp")]) end
     if e.stack then out = out .. string.format(", stacking up to %d times", e.maxStacks or 5) end
     if e.decayStacks then out = out .. string.format(". Each tick removes %s stacks", fmtNum(e.decayStacks)) end
     if e.rampStacks then out = out .. string.format(". Every %s ticks adds %s stack%s. Reapplications preserve accumulated stacks", fmtNum(e.rampEvery or 1), fmtNum(e.rampStacks), e.rampStacks == 1 and "" or "s") end
@@ -311,7 +333,7 @@ local function describeEffect(e, trigger, details, context)
     return out .. "."
   elseif t == "hot" then
     local out = string.format("Heals %d every second for %d seconds", e.tick, e.duration)
-    if e.coef and e.coef > 0 then out = out .. string.format(" (+%s%% Healing Power per tick)", fmtScalar(e.coef * 100)) end
+    if e.coef and e.coef > 0 then out = out .. string.format(" (+%s%% %s per tick)", fmtScalar(e.coef * 100), STAT_LABELS[e.powerStat or "healing"]) end
     return out .. "."
   elseif t == "buff" then
     if e.free then
@@ -335,6 +357,7 @@ local function describeEffect(e, trigger, details, context)
       local what = pet and "Your pet" or noun:gsub("^%l", string.upper)
       if e.charges then
         what = "Your next " .. (e.charges == 1 and matchNoun(e.match, false) or e.charges .. " " .. noun)
+        if e.paidOnly then what = what .. " paid with resources" end
         if e.stat == "crit" and e.value >= 100 then return what .. (e.charges > 1 and " are guaranteed crits." or " is a guaranteed crit.") end
         duration = details ~= false and duration or ""
       end
@@ -354,7 +377,13 @@ local function describeEffect(e, trigger, details, context)
       return (e.name or e.key or "Effect") .. " active" .. duration .. "."
     end
     local out
-    if e.missingHealth and e.stat == "dmgPct" then
+    if e.gearCoef then
+      out = string.format("Gain %s equal to %s%% of the %s on your equipped items", STAT_LABELS[e.stat] or e.stat,
+        fmtScalar(e.gearCoef * 100), STAT_LABELS[e.gearStat or e.stat] or e.stat)
+      if e.gearCap then out = out .. ", up to " .. fmtStat(e.stat, e.gearCap):gsub("^%+", "") end
+      out = out .. duration
+      if (e.value or 0) ~= 0 then out = out .. string.format(". Also gain %s", fmtStat(e.stat, e.value)) end
+    elseif e.missingHealth and e.stat == "dmgPct" then
       out = string.format("Deal up to %s%% more damage based on missing health%s", fmtNum(e.value), duration)
       if details ~= false then out = out .. string.format(". +%s%% damage per 1%% missing health", fmtNum(e.value / 100)) end
     elseif e.missingHealth then
@@ -471,8 +500,11 @@ local function describeEffect(e, trigger, details, context)
     if e.resource == "rage" then return string.format("Gain %s Rage.", fmtScalar(amount)) end
     return string.format("Restores %d %s.", e.amount, ns.RESOURCE_NAMES[e.resource] or e.resource)
   elseif t == "absorb" then
+    if (e.amount or 0) == 0 and not e.fromEvent and (e.coef or 0) > 0 then
+      return string.format("Gain a shield that absorbs damage equal to %s%% of your %s.", fmtScalar(e.coef * 100), STAT_LABELS[e.powerStat or "healing"])
+    end
     local out = e.fromEvent and string.format("Absorbs %s%% of %s", fmtNum(e.fromEvent * 100), eventAmountLabel(trigger)) or string.format("Gain a shield that absorbs %d damage", e.amount or 0)
-    if e.coef and e.coef > 0 then out = out .. string.format(" (+%s%% Healing Power)", fmtScalar(e.coef * 100)) end
+    if e.coef and e.coef > 0 then out = out .. string.format(" (+%s%% %s)", fmtScalar(e.coef * 100), STAT_LABELS[e.powerStat or "healing"]) end
     if trigger and trigger.on == "block" then out = out .. ", including this hit" end
     return out .. "."
   elseif t == "clearControl" then
@@ -683,13 +715,6 @@ local function filterLabel(f)
   if not f then return "item" end
   if f.key then local d = ns.ItemsByKey[f.key] return d and d.name or f.key end
   if f.hands then return f.hands == 2 and "Two-handed weapon" or "One-handed weapon" end
-  if f.tag == "spell" and f.anyTag and #f.anyTag == 1 and f.anyTag[1] == "dot" then return "Damage-over-time spell" end
-  if f.tag then return Describe.TagLabel(f.tag) .. " item" end
-  if f.anyTag then
-    local parts = {}
-    for _, tag in ipairs(f.anyTag) do parts[#parts + 1] = Describe.TagLabel(tag) end
-    return joinOr(parts) .. " item"
-  end
   if f.weaponType then return WEAPON_LABELS[f.weaponType] or f.weaponType end
   if f.anyWeaponType then
     local types = {}
@@ -698,6 +723,18 @@ local function filterLabel(f)
     local parts = {}
     for _, w in ipairs(f.anyWeaponType) do parts[#parts + 1] = WEAPON_LABELS[w] or w end
     return joinOr(parts)
+  end
+  if f.kind == "weapon" then
+    if f.tag == "melee" then return "Melee weapon" end
+    if f.tag == "ranged" then return "Ranged weapon" end
+    return "Weapon"
+  end
+  if f.tag == "spell" and f.anyTag and #f.anyTag == 1 and f.anyTag[1] == "dot" then return "Damage-over-time spell" end
+  if f.tag then return Describe.TagLabel(f.tag) .. " item" end
+  if f.anyTag then
+    local parts = {}
+    for _, tag in ipairs(f.anyTag) do parts[#parts + 1] = Describe.TagLabel(tag) end
+    return joinOr(parts) .. " item"
   end
   if f.kind then return KIND_LABELS[f.kind] or f.kind end
   if f.slot then return SLOT_LABELS[f.slot] or f.slot end
@@ -715,9 +752,11 @@ end
 
 function Describe.FilterPhrase(f, determiner)
   if not f then return determiner == "every" and "every item" or "an item" end
-  if f.tag and TAG_PHRASES[f.tag] then return TAG_PHRASES[f.tag][determiner == "every" and 2 or 1] end
+  local weapon = f.kind == "weapon" or f.hands or f.weaponType or f.anyWeaponType
+  if not weapon and f.tag and TAG_PHRASES[f.tag] then return TAG_PHRASES[f.tag][determiner == "every" and 2 or 1] end
   local label = filterLabel(f)
   if f.key then return label end
+  if weapon then label = label:lower() end
   if determiner == "every" then return "every " .. label end
   return (label:match("^[AEIOUaeiou]") and "an " or "a ") .. label
 end
@@ -743,17 +782,30 @@ TAG_PHRASES = {
 }
 function Describe.TagLabel(tag) return TAG_LABELS[tag] or tag end
 
-local function describeMods(mods)
+local function describeMods(mods, labels)
   local parts = {}
   for _, k in ipairs(MOD_KEYS) do
     local v = mods[k]
     if v and v ~= 0 then
       if k == "cdPct" then parts[#parts + 1] = string.format("%s%% %s cooldown", fmtScalar(math.abs(v)), v > 0 and "reduced" or "increased")
-      elseif k == "flat" then parts[#parts + 1] = string.format("%+d %s", v, MOD_LABELS[k])
-      else parts[#parts + 1] = string.format("%+d%% %s", v, MOD_LABELS[k]) end
+      elseif k == "flat" then parts[#parts + 1] = (v > 0 and "+" or "") .. fmtScalar(v) .. " " .. (labels and labels[k] or MOD_LABELS[k])
+      else parts[#parts + 1] = (v > 0 and "+" or "") .. fmtScalar(v) .. "% " .. (labels and labels[k] or MOD_LABELS[k]) end
     end
   end
   return table.concat(parts, ", ")
+end
+
+local function highlightedSubject(filter)
+  if not filter then return "Items" end
+  if filter.key then return filterLabel(filter) end
+  if filter.kind == "ammo" then return "Ammo" end
+  if filter.kind == "armor" then return "Armor" end
+  if filter.set or filter.slot then return filterLabel(filter) .. " items" end
+  if filter.weaponType or filter.anyWeaponType or filter.hands
+    or filter.kind and filter.kind ~= "ability" and filter.kind ~= "pet" and filter.kind ~= "form" then
+    return filterLabel(filter) .. "s"
+  end
+  return matchNoun(filter, true):gsub("^%l", string.upper)
 end
 
 local function describeStats(stats)
@@ -777,7 +829,7 @@ function Describe.SetGoal(setKey)
 end
 
 function Describe.Rate(value)
-  if value >= 10 then return string.format("%d", value + 0.5) end
+  if value >= 10 then return string.format("%d", math.floor(value + 0.5)) end
   return (string.format("%.1f", value):gsub("%.0$", ""))
 end
 
@@ -1124,8 +1176,11 @@ function Describe.Lines(def, context)
           or trig.match.hands == 1 and "one-handed " or trig.match.anyWeaponType and "ranged " or ""
         label = "On " .. scope .. "auto-attack"
       end
+      if trig.on == "damaged" and trig.critical ~= nil then
+        label = trig.critical and "When critically hit" or "When hit without a critical strike"
+      end
       if trig.on == "damaged" and trig.matchAttacker and trig.matchAttacker.tag == "melee" then
-        label = "When hit in melee"
+        label = trig.critical and "When critically hit in melee" or "When hit in melee"
       elseif trig.matchAttacker then
         label = label .. " from " .. Describe.FilterPhrase(trig.matchAttacker)
       end
@@ -1182,33 +1237,40 @@ function Describe.Lines(def, context)
   if #def.adjacency > 0 then
     add(ns.L[def.kind == "bag" and "Bag effects:" or "Adjacent effects:"], { r = 0.4, g = 0.8, b = 1 })
     for _, rule in ipairs(def.adjacency) do
-      local target = filterLabel(rule.match)
-      local per = rule.inside and (rule.once and "an" or "each") or (rule.once and "an adjacent" or "each adjacent")
-      local where = rule.inside and " inside" or ""
-      if rule.mods then
-        local phrase = Describe.FilterPhrase(rule.match, "every")
-        if rule.inside then phrase = (rule.match and rule.match.kind == "ammo" and "Ammo" or triggerSubject(rule.match)) .. " inside"
+      if not rule.inside then
+        if rule.empty then
+          local condition = rule.once and "At least one empty bag slot in highlighted areas" or "Empty bag slots in highlighted areas"
+          local per = rule.once and "" or " each"
+          if rule.selfMods then add(string.format("  %s: %s%s.", condition, describeMods(rule.selfMods, ADJACENT_MOD_LABELS), per), green) end
+          if rule.stats then add(string.format("  %s: Gain %s%s.", condition, table.concat(describeStats(rule.stats), ", "), per), green) end
         else
-          local subject = triggerSubject(rule.match)
-          if rule.match and not rule.match.key then
-            if rule.match.tag == "spell" then subject = "spells"
-            elseif rule.match.tag == "heal" then subject = "healing abilities" end
+          if rule.mods then add(string.format("  %s in highlighted areas: %s.", highlightedSubject(rule.match), describeMods(rule.mods, ADJACENT_MOD_LABELS)), green) end
+          if rule.once then
+            local condition = Describe.FilterPhrase(rule.match) .. " is in highlighted areas"
+            if rule.selfMods then add(string.format("  Gains %s if %s.", describeMods(rule.selfMods, ADJACENT_MOD_LABELS), condition), green) end
+            if rule.stats then add(string.format("  Gain %s if %s.", table.concat(describeStats(rule.stats), ", "), condition), green) end
+          else
+            local condition = Describe.FilterPhrase(rule.match, "every") .. " in highlighted areas"
+            if rule.selfMods then add(string.format("  Gains %s for %s.", describeMods(rule.selfMods, ADJACENT_MOD_LABELS), condition), green) end
+            if rule.stats then add(string.format("  Gain %s for %s.", table.concat(describeStats(rule.stats), ", "), condition), green) end
           end
-          phrase = "Adjacent " .. subject
         end
-        add(string.format("  %s: %s.", phrase, describeMods(rule.mods)), green)
-      end
-      if rule.selfMods then add(string.format("  Gains %s for %s %s%s.", describeMods(rule.selfMods), per, target, where), green) end
-      if rule.stats then
-        local parts = describeStats(rule.stats)
-        if rule.inside then
+      else
+        local target = filterLabel(rule.match)
+        local per = rule.once and "an" or "each"
+        if rule.mods then
+          local phrase = (rule.match and rule.match.kind == "ammo" and "Ammo" or triggerSubject(rule.match)) .. " inside"
+          add(string.format("  %s: %s.", phrase, describeMods(rule.mods, ADJACENT_MOD_LABELS)), green)
+        end
+        if rule.selfMods then add(string.format("  Gains %s for %s %s inside.", describeMods(rule.selfMods, ADJACENT_MOD_LABELS), per, target), green) end
+        if rule.stats then
+          local parts = describeStats(rule.stats)
           local subject = rule.match and rule.match.kind == "ammo" and "ammo item" or target:lower()
           add(string.format("  %s %s inside: %s.", rule.once and "An" or "Each", subject, table.concat(parts, ", ")), green)
-        else
-          add(string.format("  You gain %s for %s %s.", table.concat(parts, ", "), per, target), green)
         end
       end
     end
+    if def.facing then add("Rotate to move the highlighted areas.", grey) end
   end
   if def.rankText then add(def.rankText, green) end
   if def.flavor then add(def.flavor, gold) end

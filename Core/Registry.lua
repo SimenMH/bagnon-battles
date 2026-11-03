@@ -121,6 +121,7 @@ function ns.RegisterItem(def)
 
   def.name     = def.name or def.key
   def.quality  = def.quality or 1
+  if def.shopWeight == nil then def.shopWeight = 1 end
   def.minRound = def.minRound or 1
   def.tags     = def.tags or {}
   def.tagSet   = Util.Set(def.tags)
@@ -142,6 +143,16 @@ function ns.RegisterItem(def)
   end
   def.triggers  = def.triggers or {}
   def.adjacency = def.adjacency or {}
+  -- Direction changes can matter even when a rotated footprint is identical.
+  def.facing = nil
+  for _, rule in ipairs(def.adjacency) do
+    if type(rule) == "table" and rule.side then
+      def.facing = true
+      def.distinctRots = { 0, 1, 2, 3 }
+      for _, rotation in ipairs(def.rots) do rotation.distinct = true end
+      break
+    end
+  end
   if not def.use and #def.triggers > 0 then def.passiveTriggers = true end
 
   ns.Items[def.id] = def
@@ -248,6 +259,20 @@ local function checkEffects(problems, owner, effects)
     checkCondition(problems, owner, e.cond)
     checkCondition(problems, owner, e.critIf)
     checkMatch(problems, owner, e.match)
+    local stats = Util.Set(ns.Sim.STAT_KEYS)
+    if e.powerStat ~= nil and not stats[e.powerStat] then problems[#problems + 1] = owner .. " has unknown powerStat" end
+    if e.gearCoef ~= nil then
+      if e.type ~= "buff" or not stats[e.stat] or not stats[e.gearStat or e.stat] or type(e.gearCoef) ~= "number"
+        or e.gearCoef ~= e.gearCoef or e.gearCoef < 0 or e.gearCoef == math.huge then
+        problems[#problems + 1] = owner .. " has invalid gear-derived buff"
+      end
+      if type(e.gearCap) ~= "number" or e.gearCap ~= e.gearCap or e.gearCap < 0 or e.gearCap == math.huge then
+        problems[#problems + 1] = owner .. " gear-derived buff requires a finite nonnegative gearCap"
+      end
+    elseif e.gearStat ~= nil or e.gearCap ~= nil then problems[#problems + 1] = owner .. " gear source requires gearCoef" end
+    if e.paidOnly ~= nil and (e.paidOnly ~= true or e.type ~= "buff" or not e.target or not e.match or e.free or e.double) then
+      problems[#problems + 1] = owner .. " paidOnly requires a matched stat buff"
+    end
     if ns.Sim.ITEM_KEY_EFFECTS[e.type] and e.key ~= nil and not ns.ItemsByKey[e.key] then
       problems[#problems + 1] = owner .. " targets unknown item " .. tostring(e.key)
     end
@@ -258,6 +283,7 @@ end
 local function checkTriggers(problems, owner, triggers)
   for _, trigger in ipairs(triggers or {}) do
     if not ns.Sim.TRIGGER_EVENTS[trigger.on] then problems[#problems + 1] = owner .. " has unknown trigger " .. tostring(trigger.on) end
+    if trigger.critical ~= nil and type(trigger.critical) ~= "boolean" then problems[#problems + 1] = owner .. " has invalid critical trigger filter" end
     checkCondition(problems, owner, trigger.condition)
     checkMatch(problems, owner, trigger.match)
     checkEffects(problems, owner, trigger.effects)
@@ -287,17 +313,91 @@ local function checkBotPlans(problems)
   end
 end
 
+local function positiveWeight(value)
+  return type(value) == "number" and value == value and value > 0 and value < math.huge
+end
+
+local function checkShopWeights(problems, def)
+  local function problem(message) problems[#problems + 1] = def.key .. " " .. message end
+  if not positiveWeight(def.shopWeight) then problem("has an invalid shopWeight") end
+  if def.shopClassWeights ~= nil then
+    if type(def.shopClassWeights) ~= "table" then problem("shopClassWeights must be a class map")
+    else
+      for classKey, weight in pairs(def.shopClassWeights) do
+        if not ns.Classes[classKey] then problem("has shopClassWeights for unknown class " .. tostring(classKey)) end
+        if not positiveWeight(weight) or positiveWeight(def.shopWeight) and not positiveWeight(weight * def.shopWeight) then
+          problem("has an invalid shopClassWeights value for " .. tostring(classKey))
+        end
+      end
+    end
+  end
+  if def.shopAffinities ~= nil then
+    if type(def.shopAffinities) ~= "table" then problem("shopAffinities must be a class/spec map")
+    else
+      for classKey, affinities in pairs(def.shopAffinities) do
+        local class, known = ns.Classes[classKey], {}
+        for _, spec in ipairs(class and class.specs or {}) do known[spec.tag] = true end
+        if not class then problem("has shopAffinities for unknown class " .. tostring(classKey)) end
+        if type(affinities) ~= "table" then problem("shopAffinities entry must be a spec map")
+        else
+          for spec, weight in pairs(affinities) do
+            if not known[spec] then problem("has shopAffinities for unknown spec " .. tostring(classKey) .. ":" .. tostring(spec)) end
+            if not positiveWeight(weight) then problem("has an invalid shopAffinities value for " .. tostring(spec)) end
+          end
+        end
+      end
+    end
+  end
+end
+
+local function checkSpatialPayload(problems, def, rule)
+  local function problem(message) problems[#problems + 1] = def.key .. " spatial rule " .. message end
+  for _, field in ipairs({ "once", "inside" }) do
+    if rule[field] ~= nil and type(rule[field]) ~= "boolean" then problem(field .. " must be boolean") end
+  end
+  if rule.empty and not rule.selfMods and not rule.stats then problem("empty cells require a selfMods or stats payload") end
+  for _, field in ipairs({ "mods", "selfMods", "stats" }) do
+    local values = rule[field]
+    if values ~= nil then
+      if type(values) ~= "table" then problem(field .. " must be a table")
+      else
+        local allowed = Util.Set(field == "stats" and ns.Sim.STAT_KEYS or ns.Sim.MOD_KEYS)
+        for key, value in pairs(values) do
+          if not allowed[key] then problem("has unknown " .. field .. " field " .. tostring(key)) end
+          if type(value) ~= "number" or value ~= value or value <= -math.huge or value >= math.huge then
+            problem(field .. "." .. tostring(key) .. " must be finite")
+          end
+        end
+      end
+    end
+  end
+end
+
 function ns.ValidateRegistry()
   local problems = {}
   local abilityKinds = { ability = true, form = true, pet = true, ammo = true }
   for i = 1, #ns.ItemList do
     local def = ns.ItemList[i]
+    checkShopWeights(problems, def)
+    if not def.rank and ns.Ranks and ns.Ranks.ValidateProfile then
+      for _, problem in ipairs(ns.Ranks.ValidateProfile(def)) do problems[#problems + 1] = problem end
+    end
     if def.use then
       checkCondition(problems, def.key, def.use.condition)
       checkEffects(problems, def.key, def.use.effects)
     end
     checkTriggers(problems, def.key, def.triggers)
-    for _, rule in ipairs(def.adjacency) do checkMatch(problems, def.key, rule.match) end
+    for _, rule in ipairs(def.adjacency) do
+      local valid, reason = ns.Grid.ValidateEffectRule(rule)
+      if not valid then problems[#problems + 1] = def.key .. " " .. reason end
+      if type(rule) == "table" then
+        checkMatch(problems, def.key, rule.match)
+        checkSpatialPayload(problems, def, rule)
+        if def.kind == "bag" and (rule.side or rule.corners or rule.empty) then
+          problems[#problems + 1] = def.key .. " bag effects do not support item spatial selectors"
+        end
+      end
+    end
     for _, c in ipairs(def.shopClasses or {}) do
       if not ns.Classes[c] then problems[#problems + 1] = def.key .. " is offered to unknown class " .. tostring(c) end
     end

@@ -223,7 +223,7 @@ function Run:TrainingInfo(target)
   local base = ns.Ranks.Base(def)
   if not base.rankable then return nil, "This item has no trainable ranks." end
   local learned = math.max(self.learnedRanks[base.key] or 1, def.rank or 1)
-  local nextRank = learned < 3 and learned + 1 or nil
+  local nextRank = ns.Ranks.NextRank(base, learned)
   local nextDef = nextRank and ns.Ranks.Definition(base, nextRank)
   local price = nextRank and ns.Ranks.TrainingCost(base, nextRank)
   local reason
@@ -326,9 +326,11 @@ function Run:NewShop(keepReserved)
     local key = self.formCompanions.pending[pair.key]
     if key then companionId = ns.ItemsByKey[key].id break end
   end
+  local formPreference = self.class == "DRUID" and Economy.FormPreference(self.grid, self.stash) or nil
+  local shopContext = ns.ShopWeights.Context(self.class, self.grid, self.stash, owned, formPreference)
   self.shop.offers, self.shop.sales = Economy.GenerateShop(self:ShopRNG(), self.class, self.round, #self.grid.bags, owned, reservedId,
     self.shopBias and self.shopBias.talents, self.shop.rerolls == 0,
-    self.class == "DRUID" and Economy.FormPreference(self.grid, self.stash) or nil, companionId)
+    formPreference, companionId, shopContext)
   local reservedIndex
   for index, id in ipairs(self.shop.offers) do if id == reservedId then reservedIndex = index break end end
   self.shop.reserved = reservedIndex and reservedId or nil
@@ -736,13 +738,13 @@ function Run.Restore(data)
     for key, value in pairs(data.trainingResale) do
       local base, rank = ns.ItemsByKey[key], run.learnedRanks[key]
       if not base or not rank or rank < 2 or type(value) ~= "number" or value ~= math.floor(value) or value < 0
-        or value > math.max(ns.Ranks.Investment(base, rank) - base.cost, ns.Ranks.LEGACY_TRAINING[rank]) then return nil end
+        or value > math.max(ns.Ranks.Investment(base, rank) - base.cost, ns.Ranks.LegacyTrainingCost(base, rank)) then return nil end
       run.trainingResale[key] = value
     end
   else
     for key, rank in pairs(run.learnedRanks) do
       local base = ns.ItemsByKey[key]
-      if rank >= 2 and (owned[base.id] or 0) > 0 then run.trainingResale[key] = ns.Ranks.LEGACY_TRAINING[rank] end
+      if rank >= 2 and (owned[base.id] or 0) > 0 then run.trainingResale[key] = ns.Ranks.LegacyTrainingCost(base, rank) end
     end
   end
   run.started = data.started

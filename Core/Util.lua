@@ -167,5 +167,5 @@ end
 
 function Util.FormatPct(n)
   if n == floor(n) then return string.format("%d%%", n) end
-  return string.format("%.1f%%", n)
+  return (string.format("%.2f", n):gsub("0+$", ""):gsub("%.$", "")) .. "%"
 end

@@ -12,6 +12,20 @@ Migrations.MAX_BACKUPS = 5
 local MIN_LOCAL_VERSION = { WARRIOR = 13, HUNTER = 15, DRUID = 16, PALADIN = 21, ROGUE = 21, PRIEST = 21, SHAMAN = 21, MAGE = 21, WARLOCK = 21 }
 local BLOODRAGE_ID = 1267
 
+-- Version 33 changes Warrior training prices. Freeze the old families and their
+-- costs here; a later class/profile must never become eligible for this refund.
+-- Entries are { base ID, old quality, old first shop round }.
+local WARRIOR_TRAINING_V32 = {
+  heroic_strike = { 1200, 1, 1 }, rend = { 1201, 1, 1 }, overpower = { 1203, 2, 2 },
+  mortal_strike = { 1204, 3, 3 }, execute = { 1205, 3, 4 }, bloodthirst = { 1208, 3, 3 },
+  whirlwind = { 1209, 3, 4 }, shield_block = { 1219, 1, 1 }, shield_slam = { 1220, 3, 3 },
+  revenge = { 1221, 1, 1 }, sunder_armor = { 1222, 1, 1 }, battle_shout = { 1250, 2, 2 },
+  slam = { 1260, 2, 2 }, cleave = { 1701, 4, 7 }, shield_bash = { 1703, 3, 5 },
+  hamstring = { 1900, 1, 1 }, demoralizing_shout = { 1905, 1, 1 },
+  pummel = { 1907, 4, 7 }, thunder_clap = { 1909, 2, 2 },
+}
+local WARRIOR_LEGACY_CREDIT = { [2] = 4, [3] = 11 }
+
 local LEGACY_QUIVERS = {
   [20] = { shape = { "1111" }, quality = 1, minRound = 1, cost = 4, replacement = "woolen_bag" },
   [21] = { shape = { "111111" }, quality = 2, minRound = 3, cost = 6, replacement = "mageweave_bag" },
@@ -44,6 +58,80 @@ end
 local function coordinates(x, y, rot)
   return type(x) == "number" and x == math.floor(x) and type(y) == "number" and y == math.floor(y)
     and type(rot) == "number" and rot == math.floor(rot) and rot >= 0 and rot <= 3
+end
+
+local function migrateWarriorTraining(data, version, info)
+  if data.class ~= "WARRIOR" or version >= 33 then return data, info end
+  local function integer(value, low, high)
+    return type(value) == "number" and value == value and value < math.huge
+      and value == math.floor(value) and value >= low and (not high or value <= high)
+  end
+  if not integer(data.round, 1, Economy.ROUNDS + 1) or not integer(data.gold, 0)
+    or not dense(data.i, 4) or data.stash ~= nil and not dense(data.stash, 1)
+    or data.learnedRanks ~= nil and type(data.learnedRanks) ~= "table"
+    or data.trainingResale ~= nil and type(data.trainingResale) ~= "table" then return nil end
+  local learned, owned = {}, {}
+  local function historicalRank(key, rank)
+    local old = WARRIOR_TRAINING_V32[key]
+    local unlock = rank == 3 and 7 or rank == 2 and 4 or 1
+    return old and integer(rank, 1, 3) and data.round >= math.max(old[3], unlock)
+  end
+  for key, rank in pairs(data.learnedRanks or {}) do
+    if WARRIOR_TRAINING_V32[key] then
+      if not historicalRank(key, rank) then return nil end
+      learned[key] = rank
+    elseif ns.ItemsByKey[key] and rank ~= 1 then
+      -- These support/new families could not have been trained before version 33.
+      return nil
+    end
+  end
+  local function own(id)
+    local def = ns.Items[id]
+    local key = def and (def.baseKey or def.key)
+    local old = key and WARRIOR_TRAINING_V32[key]
+    if old then
+      local base = ns.ItemsByKey[key]
+      local rank = def.rank or 1
+      if not base or base.id ~= old[1] or not historicalRank(key, rank) then return false end
+      owned[key], learned[key] = true, math.max(learned[key] or 1, rank)
+    elseif def and def.rank then return false end
+    return true
+  end
+  for index = 1, #data.i, 4 do if not own(data.i[index]) then return nil end end
+  for _, id in ipairs(data.stash or {}) do if not own(id) then return nil end end
+  local credits = {}
+  if data.trainingResale then
+    for key, value in pairs(data.trainingResale) do
+      local old, rank = WARRIOR_TRAINING_V32[key], learned[key]
+      if not old or not rank or rank < 2 or not integer(value, 0) then return nil end
+      local paid = rank == 2 and old[2] + 1 or old[2] * 3 + 2
+      if value > math.max(paid, WARRIOR_LEGACY_CREDIT[rank]) or value > 0 and not owned[key] then return nil end
+      credits[key] = value
+    end
+  else
+    -- Old saves lacking this field used the fixed 4/11 inference. Learned ranks
+    -- survive a sale; ownership is essential or a sold family invents a refund.
+    for key in pairs(owned) do
+      if learned[key] >= 2 then credits[key] = WARRIOR_LEGACY_CREDIT[learned[key]] end
+    end
+  end
+  local refund, changed = 0, data.trainingResale == nil and next(credits) ~= nil
+  for key, value in pairs(credits) do
+    local base, rank = ns.ItemsByKey[key], learned[key]
+    local investment, legacy = ns.Ranks.Investment(base, rank), ns.Ranks.LegacyTrainingCost(base, rank)
+    if not investment or not legacy then return nil end
+    local cap = math.max(investment - base.cost, legacy)
+    if value > cap then
+      credits[key], refund, changed = cap, refund + value - cap, true
+    end
+  end
+  local candidate = Util.ShallowCopy(data)
+  candidate.trainingResale, candidate.gold = credits, data.gold + refund
+  if changed then
+    info = info or { quivers = 0, ammo = 0, removed = 0, refunded = 0 }
+    info.changed, info.trainingAdjusted, info.trainingRefunded = true, true, refund
+  end
+  return candidate, info
 end
 
 local function migrationRefund(def)
@@ -268,12 +356,16 @@ function Migrations.Upgrade(data)
   local context = { inferCompanions = data.class == "PALADIN" and data.dataVersion == 21 }
   if data.dataVersion == ns.DATA_VERSION then return data, context end
   if not supportedLegacy(data) then return nil end
+  local version = data.dataVersion
   if needsInventoryMigration(data) then
     local candidate, info = migrateInventory(data)
     if not candidate then return nil end
     context.inferCompanions, context.info = false, info
-    return candidate, context
+    data = candidate
   end
+  local candidate, info = migrateWarriorTraining(data, version, context.info)
+  if not candidate then return nil end
+  data, context.info = candidate, info
   data = Util.ShallowCopy(data)
   data.dataVersion = ns.DATA_VERSION
   return data, context
@@ -340,6 +432,8 @@ local function recoverDuplicates(data)
   if type(data) ~= "table" or data.dataVersion ~= 16 then return nil end
   local candidate, info = migrateInventory(data, true)
   if not candidate or info.removed == 0 then return nil end
+  candidate, info = migrateWarriorTraining(candidate, data.dataVersion, info)
+  if not candidate then return nil end
   local ok, restored = pcall(Run.Restore, candidate)
   if ok and restored then return restored, info.removed, info end
   return nil
@@ -348,6 +442,9 @@ end
 local function refundMessage(info, messages)
   if info and info.refunded > 0 then
     messages[#messages + 1] = string.format(L["Refunded %d gold for items that no longer fit."], info.refunded)
+  end
+  if info and (info.trainingRefunded or 0) > 0 then
+    messages[#messages + 1] = string.format(L["Refunded %d gold from previous training costs."], info.trainingRefunded)
   end
 end
 
@@ -361,10 +458,14 @@ function Migrations.LoadSaved(saved)
     out.messages[1] = string.format(L["Your saved run could not be loaded and was kept unchanged, with a backup: %s"], tostring(run))
     return out
   end
-  if run and migration and migration.changed and legacy then
+  if run and migration and migration.changed and (legacy or migration.trainingAdjusted) then
     out.backups[1] = { reason = "migration", run = original }
     out.save = run:Serialize()
-    out.messages[1] = L[migration.quivers > 0 and "Quivers replaced with bags. Original save backed up." or "Extra ammo stored or refunded. Original save backed up."]
+    if migration.quivers > 0 or migration.ammo > 0 then
+      out.messages[1] = L[migration.quivers > 0 and "Quivers replaced with bags. Original save backed up." or "Extra ammo stored or refunded. Original save backed up."]
+    else
+      out.messages[1] = L["Ability training updated. Original save backed up."]
+    end
     refundMessage(migration, out.messages)
   elseif not run and legacy then
     local recovered, removed, repaired = recoverDuplicates(original)

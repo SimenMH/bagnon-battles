@@ -59,12 +59,12 @@ function Tooltip.ContextLines(def, context, target)
         if active.enabled and active.uid == item.uid then attacking = true end
         if active.enabled and active.def.replacesWeapon then form = active.def.name end
       end
-      if not item.enabled then
-        add("Inactive weapon. Stats still apply.", 1, 0.55, 0.4)
+      if item.equipped == false or item.suppressed then
+        add("Unequipped weapon. No stats or effects.", 1, 0.55, 0.4)
       elseif form and not ranged and not attacking then
-        add("Weapon attacks replaced by " .. form .. ".", 1, 0.75, 0.4)
+        add("Equipped. Stats still apply; attacks are replaced by " .. form .. ".", 1, 0.75, 0.4)
       elseif not ranged and not attacking and context.weaponRanged and context.weaponRanged.def.weaponType == "wand" then
-        add("Melee attacks disabled while a wand is equipped.", 1, 0.75, 0.4)
+        add("Equipped. Stats still apply; attacks use your wand.", 1, 0.75, 0.4)
       elseif attacking and not ranged and context.weaponMelee and item.uid ~= context.weaponMelee.uid then
         add("Off-hand attacks deal 50% damage.", 1, 0.75, 0.4)
       end
@@ -77,7 +77,9 @@ function Tooltip.ContextLines(def, context, target)
   end
 
   local rule = Describe.SlotRule(def)
-  if rule then add(rule) end
+  local equipment = def.kind == "weapon" or def.kind == "shield" or def.kind == "armor"
+    or def.kind == "ring" or def.kind == "trinket" or def.kind == "neck" or def.kind == "cloak" or def.kind == "relic"
+  if rule and (not equipment or context and context.details) then add(rule) end
 
   if not context or not context.details then return lines end
   local tags = {}

@@ -16,6 +16,7 @@ Core\Registry.lua
 Core\Grid.lua
 Core\Economy.lua
 Core\Mastery.lua
+Core\ShopWeights.lua
 Core\Sim.lua
 Core\Describe.lua
 Core\BuildValidation.lua
@@ -33,6 +34,7 @@ Data\Bags.lua
 Data\Shared.lua
 Data\Druid.lua
 Data\Warrior.lua
+Data\WarriorProgression.lua
 Data\Hunter.lua
 Data\HunterGear.lua
 Data\DruidGear.lua

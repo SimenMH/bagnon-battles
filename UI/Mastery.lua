@@ -153,7 +153,7 @@ function Mastery.Create(parent, onChange)
   panel.title:SetPoint("TOPLEFT", 18, -16)
   panel.available = T.Number(panel.card, 15, T.C.gold)
   panel.available:SetPoint("TOPRIGHT", -18, -18)
-  panel.hint = T.Text(panel.card, 11, T.C.muted, L["You gain talent points at round 3, 6, 9 and 12"])
+  panel.hint = T.Text(panel.card, 11, T.C.muted, L["Gain talent points at round 3, 6, 9 and 12"])
   panel.hint:SetPoint("TOPLEFT", panel.title, "BOTTOMLEFT", 0, -8)
   panel.rows = {}
   for index = 1, 3 do

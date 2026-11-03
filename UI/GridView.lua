@@ -6,10 +6,11 @@ local GridView = {}
 GridView.__index = GridView
 ns.UI.GridView = GridView
 
-local RANK_LABELS = { "I", "II", "III" }
+local RANK_LABELS = { "I", "II", "III", "IV", "V" }
 
 function GridView.SetRankBadge(frame, def)
-  local label = def and ns.Ranks.Definition(def, 2) and RANK_LABELS[def.rank or 1]
+  local rank = def and (def.rank or 1)
+  local label = def and ns.Ranks.Definition(def, 2) and (RANK_LABELS[rank] or tostring(rank))
   if not label then
     if frame.rankText then frame.rankText:Hide() end
     return
@@ -21,6 +22,218 @@ function GridView.SetRankBadge(frame, def)
   frame.rankText:SetPoint("BOTTOMLEFT", frame.icon or frame, "BOTTOMLEFT", frame.icon and 3 or 4, frame.icon and 2 or 3)
   frame.rankText:SetText(label)
   frame.rankText:Show()
+end
+
+local FACING_LABELS = { "^", ">", "v", "<" }
+
+-- Catalog glyphs have no inventory context. A synthetic usable one-cell band
+-- shows potential effects, using the combat resolver rather than real bag fit.
+function GridView.GlyphGeometry(def, rotation)
+  local shape = ns.RotationCells(def, rotation or 0)
+  local grid = setmetatable({ W = shape.w + 2, H = shape.h + 2, cells = {}, occ = {}, items = {}, bags = {} }, Grid)
+  for y = 0, grid.H - 1 do
+    for x = 0, grid.W - 1 do grid.cells[Grid.Key(x, y)] = "glyph" end
+  end
+  local placement = { id = def.id, uid = 1, x = 1, y = 1, rot = rotation or 0, cells = {} }
+  for _, cell in ipairs(shape.cells) do
+    local key = Grid.Key(cell[1] + 1, cell[2] + 1)
+    placement.cells[#placement.cells + 1], grid.occ[key] = key, placement
+  end
+  grid.items[1] = placement
+  local selected = {}
+  local function include(rule)
+    for _, key in ipairs(grid:EffectCells(placement, rule)) do selected[key] = true end
+  end
+  for _, rule in ipairs(def.adjacency or {}) do if not rule.inside then include(rule) end end
+  local orthogonal = false
+  local function effects(list)
+    for _, effect in ipairs(list or {}) do if effect.target == "neighbors" then orthogonal = true end end
+  end
+  effects(def.use and def.use.effects)
+  for _, trigger in ipairs(def.triggers or {}) do
+    if trigger.on and trigger.on:find("^adjacent") then orthogonal = true end
+    effects(trigger.effects)
+  end
+  if orthogonal then include() end
+  local keys, cells = {}, {}
+  for key in pairs(selected) do keys[#keys + 1] = key end
+  table.sort(keys)
+  local minX, minY, maxX, maxY = 0, 0, shape.w - 1, shape.h - 1
+  for _, key in ipairs(keys) do
+    local x, y = key % 100 - 1, math.floor(key / 100) - 1
+    cells[#cells + 1] = { x, y }
+    minX, minY = math.min(minX, x), math.min(minY, y)
+    maxX, maxY = math.max(maxX, x), math.max(maxY, y)
+  end
+  return { shape = shape, effects = cells, minX = minX, minY = minY, w = maxX - minX + 1, h = maxY - minY + 1 }
+end
+
+function GridView.SetFacingBadge(frame, def, rotation, cell, gap)
+  local directional = false
+  for _, rule in ipairs(def and def.adjacency or {}) do
+    if rule.side then directional = true break end
+  end
+  if not directional then
+    if frame.facingText then frame.facingText:Hide() end
+    return
+  end
+  local rot = ns.RotationCells(def, rotation)
+  local direction = (rotation or 0) % 4
+  local dx, dy = 0, -1
+  for _ = 1, direction do dx, dy = -dy, dx end
+  local best, projection, distance
+  for _, c in ipairs(rot.cells) do
+    local along = c[1] * dx + c[2] * dy
+    local across = math.abs((c[1] - (rot.w - 1) / 2) * dy - (c[2] - (rot.h - 1) / 2) * dx)
+    if not best or along > projection or along == projection and across < distance then
+      best, projection, distance = c, along, across
+    end
+  end
+  if not frame.facingText then frame.facingText = T.Number(frame, 13, T.C.gold, nil, "OUTLINE") end
+  frame.facingText:ClearAllPoints()
+  -- Anchor inside an occupied silhouette cell, including nonrectangular shapes.
+  frame.facingText:SetPoint("CENTER", frame, "TOPLEFT",
+    (best[1] + 0.5) * cell + dx * (cell * 0.5 - 6) - (gap or 0) / 2,
+    -(best[2] + 0.5) * cell - dy * (cell * 0.5 - 6) + (gap or 0) / 2)
+  frame.facingText:SetText(FACING_LABELS[direction + 1])
+  frame.facingText:Show()
+end
+
+local function placementOrder(a, b)
+  if a.x ~= b.x then return a.x < b.x end
+  if a.y ~= b.y then return a.y < b.y end
+  if a.id ~= b.id then return a.id < b.id end
+  return (a.rot or 0) < (b.rot or 0)
+end
+
+function GridView.RuleRecipients(grid, placement, rule, suppressed)
+  local out = {}
+  if suppressed and suppressed[placement.uid] then return out end
+  for _, recipient in ipairs(grid:EffectNeighbors(placement, rule)) do
+    if not (suppressed and suppressed[recipient.uid]) and ns.Util.MatchDef(ns.Items[recipient.id], rule.match) then
+      out[#out + 1] = recipient
+    end
+  end
+  table.sort(out, placementOrder)
+  if rule.once then for index = #out, 2, -1 do out[index] = nil end end
+  return out
+end
+
+-- Geometry comes from the same resolver as combat. Potential cells remain
+-- visible when empty, occupied by a nonmatching item, or excluded by once.
+function GridView.EffectHints(grid, placement, suppressed)
+  local states, targets, seen = {}, {}, {}
+  local def = ns.Items[placement.id]
+  for _, rule in ipairs(def and def.adjacency or {}) do
+    if not rule.inside then
+      local regionRule = rule
+      if rule.empty then
+        regionRule = { side = rule.side, corners = rule.corners }
+      end
+      for _, key in ipairs(grid:EffectCells(placement, regionRule)) do
+        if not states[key] then states[key] = "potential" end
+      end
+      if not (suppressed and suppressed[placement.uid]) then
+        if rule.empty then
+          for index, key in ipairs(grid:EffectCells(placement, rule)) do
+            if not rule.once or index == 1 then states[key] = "empty" end
+          end
+        else
+          local selected = {}
+          for _, key in ipairs(grid:EffectCells(placement, rule)) do selected[key] = true end
+          for _, recipient in ipairs(GridView.RuleRecipients(grid, placement, rule, suppressed)) do
+            if not seen[recipient] then targets[#targets + 1], seen[recipient] = recipient, true end
+            for _, key in ipairs(recipient.cells) do
+              if selected[key] then states[key] = "matched" end
+            end
+          end
+        end
+      end
+    end
+  end
+  local cells = {}
+  for key, state in pairs(states) do cells[#cells + 1] = { key = key, state = state } end
+  table.sort(cells, function(a, b) return a.key < b.key end)
+  table.sort(targets, placementOrder)
+  return { cells = cells, targets = targets }
+end
+
+function GridView:ClearEffectHints()
+  for _, hint in ipairs(self.effectHintPool or {}) do
+    if hint.glow then
+      T.StopPulse(hint.glow)
+      hint.glow:Hide()
+    end
+    hint:Hide()
+  end
+  self.effectHints = nil
+end
+
+function GridView:ShowEffectHints(placement, grid, suppressed)
+  self:ClearEffectHints()
+  grid = grid or self.grid
+  if not grid or not placement then return end
+  local hints = GridView.EffectHints(grid, placement, suppressed or self.suppressedUids)
+  self.effectHints = hints
+  self.effectHintPool = self.effectHintPool or {}
+  for index, info in ipairs(hints.cells) do
+    local hint = self.effectHintPool[index]
+    if not hint then
+      hint = CreateFrame("Frame", nil, self.frame)
+      hint:EnableMouse(false)
+      hint.fill = hint:CreateTexture(nil, "BACKGROUND")
+      hint.fill:SetTexture(T.TEX.white)
+      hint.fill:SetAllPoints()
+      hint.glow = hint:CreateTexture(nil, "OVERLAY", nil, 1)
+      local atlas = "bags-glow-white"
+      local atlasInfo = C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(atlas)
+      if atlasInfo and hint.glow.SetAtlas then
+        hint.glow:SetAtlas(atlas)
+        hint.glowScale = 1.1
+      else
+        hint.glow:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+        hint.glowScale = 62 / 36
+      end
+      hint.glow:SetBlendMode("ADD")
+      hint.glow:SetPoint("CENTER", hint, "CENTER", 0, 0)
+      hint.edges = {}
+      for edge = 1, 4 do
+        hint.edges[edge] = hint:CreateTexture(nil, "OVERLAY")
+        hint.edges[edge]:SetTexture(T.TEX.white)
+      end
+      self.effectHintPool[index] = hint
+    end
+    local size = self.cell - self.gap - 4
+    hint:SetFrameLevel(self.frame:GetFrameLevel() + 8)
+    hint:SetSize(size, size)
+    hint:ClearAllPoints()
+    hint:SetPoint("TOPLEFT", self.frame, "TOPLEFT",
+      (info.key % 100) * self.cell + self.gap / 2 + 2,
+      -(math.floor(info.key / 100) * self.cell + self.gap / 2 + 2))
+    local potential = info.state == "potential"
+    local r, g, b = 0.35, 0.7, 1
+    if info.state == "matched" then r, g, b = 1, 0.85, 0.3
+    elseif info.state == "empty" then r, g, b = 0.3, 1, 0.5 end
+    hint.fill:SetVertexColor(r, g, b, potential and 0.04 or 0.13)
+    local glowSize = size * hint.glowScale
+    hint.glow:SetSize(glowSize, glowSize)
+    hint.glow:SetVertexColor(r, g, b, 1)
+    hint.glow:SetAlpha(0.85)
+    hint.glow:SetShown(not potential)
+    if not potential then T.Pulse(hint.glow, 0.2, 1, 0.5) end
+    for edge, texture in ipairs(hint.edges) do
+      texture:ClearAllPoints()
+      texture:SetVertexColor(r, g, b, potential and 0.45 or 0.95)
+      if edge <= 2 then
+        texture:SetSize(size, potential and 1 or 2)
+        texture:SetPoint(edge == 1 and "TOPLEFT" or "BOTTOMLEFT", hint, edge == 1 and "TOPLEFT" or "BOTTOMLEFT", 0, 0)
+      else
+        texture:SetSize(potential and 1 or 2, size)
+        texture:SetPoint(edge == 3 and "TOPLEFT" or "TOPRIGHT", hint, edge == 3 and "TOPLEFT" or "TOPRIGHT", 0, 0)
+      end
+    end
+    hint:Show()
+  end
 end
 
 function GridView.New(parent, maxCell, interactive, minCell, compact)
@@ -132,6 +345,7 @@ end
 function GridView:EndHover()
   self.hovering = false
   self.lastHoverAlt = nil
+  self:ClearEffectHints()
   if self.callbacks.onHoverEnd then self.callbacks.onHoverEnd() end
 end
 
@@ -220,10 +434,12 @@ local function acquireItemFrame(self)
   f:SetScript("OnEnter", function(btn)
     self:BeginHover()
     setItemHover(btn, 0.3)
+    self:ShowEffectHints(btn.placement)
     if self.callbacks.onItemEnter then self.callbacks.onItemEnter(btn.placement, btn) end
   end)
   f:SetScript("OnLeave", function(btn)
     setItemHover(btn, 0)
+    self:ClearEffectHints()
     if self.callbacks.onItemLeave then self.callbacks.onItemLeave(btn.placement, btn) end
     if self.catcher and self.catcher:IsMouseOver() then self.lastHoverAlt = nil else self:EndHover() end
   end)
@@ -341,6 +557,7 @@ local function layoutItem(self, f, p, def)
   f.warn:Hide()
   f.warnText:Hide()
   GridView.SetRankBadge(f, def)
+  GridView.SetFacingBadge(f, def, p.rot, cell, gap)
   f.cooldown:Hide()
   f.flash:SetAlpha(0)
   setItemGlow(f)
@@ -448,6 +665,8 @@ local function layoutBag(self, f, p, def, tint)
 end
 
 function GridView:SetGrid(grid, disabledUids)
+  self:ClearPreview()
+  self:ClearEffectHints()
   self.grid = grid
   self.lastHoverAlt = nil
   self.lastDisabled = disabledUids
@@ -555,9 +774,28 @@ end
 function GridView:ClearPreview()
   for i = 1, self.previewUsed do self.previewPool[i]:Hide() end
   self.previewUsed = 0
+  self:ClearEffectHints()
+  if self.previewFacing then self.previewFacing:Hide() end
 end
 
-function GridView:ShowPreview(def, x, y, rot, valid)
+function GridView.PreviewPlacement(grid, def, x, y, rot, replacedUid)
+  local preview = setmetatable({ W = grid.W, H = grid.H, cells = grid.cells, occ = {}, items = {}, bags = grid.bags }, Grid)
+  for key, placement in pairs(grid.occ) do
+    if placement.uid ~= replacedUid then preview.occ[key] = placement end
+  end
+  for _, placement in ipairs(grid.items) do
+    if placement.uid ~= replacedUid then preview.items[#preview.items + 1] = placement end
+  end
+  local placement = { id = def.id, uid = grid.nextUid, x = x, y = y, rot = rot, cells = {} }
+  for _, cell in ipairs(Grid.Footprint(def, x, y, rot)) do
+    local key = Grid.Key(cell[1], cell[2])
+    placement.cells[#placement.cells + 1], preview.occ[key] = key, placement
+  end
+  preview.items[#preview.items + 1] = placement
+  return preview, placement
+end
+
+function GridView:ShowPreview(def, x, y, rot, valid, replacedUid)
   self:ClearPreview()
   local cells = Grid.Footprint(def, x, y, rot)
   for _, c in ipairs(cells) do
@@ -569,6 +807,23 @@ function GridView:ShowPreview(def, x, y, rot, valid)
       if valid == "swap" then tex:SetVertexColor(1, 0.85, 0.2, 0.45)
       elseif valid then tex:SetVertexColor(0.3, 1, 0.4, 0.4)
       else tex:SetVertexColor(1, 0.25, 0.25, 0.4) end
+    end
+  end
+  if def.kind ~= "bag" then
+    if not self.previewFacing then
+      self.previewFacing = CreateFrame("Frame", nil, self.frame)
+      self.previewFacing:EnableMouse(false)
+    end
+    local shape = ns.RotationCells(def, rot)
+    self.previewFacing:SetSize(shape.w * self.cell - self.gap, shape.h * self.cell - self.gap)
+    self.previewFacing:ClearAllPoints()
+    self.previewFacing:SetPoint("TOPLEFT", self.frame, "TOPLEFT", x * self.cell + self.gap / 2, -(y * self.cell + self.gap / 2))
+    self.previewFacing:SetFrameLevel(self.frame:GetFrameLevel() + 9)
+    GridView.SetFacingBadge(self.previewFacing, def, rot, self.cell, self.gap)
+    self.previewFacing:Show()
+    if valid and self.grid then
+      local preview, placement = GridView.PreviewPlacement(self.grid, def, x, y, rot, replacedUid)
+      self:ShowEffectHints(placement, preview)
     end
   end
 end

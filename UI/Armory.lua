@@ -234,6 +234,7 @@ end
 
 local function refreshCards()
   ns.UI.Tooltip.Hide()
+  screen.rankPages = screen.rankPages or {}
   local pages = math.max(1, math.ceil(#screen.entries / PAGE_SIZE))
   screen.page = math.max(1, math.min(pages, screen.page))
   screen.pageLabel:SetText(string.format("%d / %d", screen.page, pages))
@@ -246,7 +247,8 @@ local function refreshCards()
     card.base = base
     if base then
       local rank = screen.ranks[base.key] or 1
-      local def = ns.Ranks.Definition(base, rank) or base
+      if not ns.Ranks.Definition(base, rank) then rank = 1 screen.ranks[base.key] = rank end
+      local def = ns.Ranks.Definition(base, rank)
       card.def = def
       card.name:SetText(def.name)
       card.name:SetTextColor(T.QualityColor(def.quality))
@@ -256,14 +258,34 @@ local function refreshCards()
       card.iconSlot:SetQuality(def.quality)
       ns.UI.GridView.SetRankBadge(card.iconSlot, def)
       card.glyph:SetItem(def)
-      local cost = tostring(base.cost) .. " " .. T.GOLD_ICON
-      local round = string.format(L["Round %d"], base.minRound)
-      if base.craftable then round = string.format(L["Crafted from round %d"], base.minRound) end
-      card.availability:SetText(cost .. "   " .. round)
+      card.price:SetText(tostring(base.cost))
+      card.price:SetWidth(math.ceil(card.price:GetStringWidth()))
+      local slots = ns.Ranks.MaxRank(base) > 3 and 5 or 3
+      local ranks, rankPage, rankPages = ns.Ranks.Page(base, screen.rankPages[base.key], slots, rank)
+      screen.rankPages[base.key] = rankPage
+      card.rankPage = rankPage
+      local paged = rankPages > 1 and base.rankable == true
+      card.previousRankPage:SetShown(paged)
+      card.nextRankPage:SetShown(paged)
+      card.previousRankPage:SetEnabled(rankPage > 1)
+      card.nextRankPage:SetEnabled(rankPage < rankPages)
+      local width, gap = slots > 3 and (paged and 34 or 36) or 55, 2
+      local right = paged and 32 or 10
+      card.previousRankPage:ClearAllPoints()
+      card.previousRankPage:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -right - slots * (width + gap) - 1, 9)
+      local glyphRight = base.rankable == true and right + slots * (width + gap) + 7 or 12
+      card.glyph:ClearAllPoints()
+      card.glyph:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -glyphRight, 10)
       for number, button in ipairs(card.rankButtons) do
-        button:SetShown(base.rankable == true)
-        button:SetHighlighted(number == rank)
-        button.def = ns.Ranks.Definition(base, number)
+        local actualRank = ranks[number]
+        button.rank = actualRank
+        button.def = actualRank and ns.Ranks.Definition(base, actualRank)
+        button:SetShown(base.rankable == true and button.def ~= nil)
+        button:SetHighlighted(actualRank == rank)
+        button:SetText(actualRank and (paged and tostring(actualRank) or string.format(L["Rank %d"], actualRank)) or "")
+        button:SetWidth(width)
+        button:ClearAllPoints()
+        button:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -right - (slots - number) * (width + gap), 9)
       end
       card:Show()
     else
@@ -369,12 +391,21 @@ local function createCard(parent, index)
   card.summary:SetHeight(26)
   card.summary:SetJustifyH("LEFT")
   card.summary:SetJustifyV("TOP")
-  card.availability = T.Text(card, 11, T.C.muted)
-  card.availability:SetPoint("BOTTOMLEFT", 12, 14)
+  card.price = T.Text(card, 11, T.C.muted)
+  card.price:SetPoint("BOTTOMLEFT", 12, 12)
+  card.price:SetHeight(14)
+  card.price:SetJustifyH("LEFT")
+  card.price:SetJustifyV("MIDDLE")
+  card.price:SetWordWrap(false)
+  card.priceIcon = card:CreateTexture(nil, "ARTWORK")
+  card.priceIcon:SetTexture(T.TEX.gold)
+  card.priceIcon:SetSize(14, 14)
+  card.priceIcon:SetPoint("LEFT", card.price, "RIGHT", 4, 0)
   card.glyph = T.CreateItemGlyph(card, 6)
+  card.glyph.maxWidth, card.glyph.maxHeight = 32, 30
   card.glyph:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -188, 10)
   card.rankButtons = {}
-  for rank = 1, 3 do
+  for rank = 1, 5 do
     local button = T.CreateButton(card, string.format(L["Rank %d"], rank), 55, 20, "default", 10)
     button:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -10 - (3 - rank) * 57, 9)
     button.rank = rank
@@ -385,6 +416,26 @@ local function createCard(parent, index)
     button:SetScript("OnLeave", ns.UI.Tooltip.Hide)
     card.rankButtons[rank] = button
   end
+  card.previousRankPage = T.CreateButton(card, "<", 18, 20, "default", 10)
+  card.previousRankPage:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -167, 9)
+  card.previousRankPage:SetScript("OnClick", function()
+    if card.base then
+      screen.rankPages[card.base.key] = (card.rankPage or 1) - 1
+      refreshCards()
+      T.PlaySound(T.SOUND_CLICK)
+    end
+  end)
+  card.nextRankPage = T.CreateButton(card, ">", 18, 20, "default", 10)
+  card.nextRankPage:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -10, 9)
+  card.nextRankPage:SetScript("OnClick", function()
+    if card.base then
+      screen.rankPages[card.base.key] = (card.rankPage or 1) + 1
+      refreshCards()
+      T.PlaySound(T.SOUND_CLICK)
+    end
+  end)
+  card.previousRankPage:Hide()
+  card.nextRankPage:Hide()
   card:SetScript("OnEnter", function(self)
     self:SetFillColor(T.RGB(T.C.bg4))
     tooltip(self, self.def)
@@ -402,7 +453,7 @@ local function create(parent)
   screen:SetFrameLevel(parent:GetFrameLevel() + 30)
   screen:EnableMouse(true)
   screen:EnableMouseWheel(true)
-  screen.category, screen.query, screen.page, screen.ranks = "all", "", 1, {}
+  screen.category, screen.query, screen.page, screen.ranks, screen.rankPages = "all", "", 1, {}, {}
   screen.back = T.CreateButton(screen, L["Back to Camp"], 120, 28, "default", 12)
   screen.back:SetPoint("TOPLEFT", 16, -14)
   screen.back:SetScript("OnClick", function() Armory.Close() T.PlaySound(T.SOUND_CLICK) end)

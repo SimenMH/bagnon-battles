@@ -53,7 +53,7 @@ function Economy.CumulativeGold(round)
 end
 
 function Economy.SellPrice(def, trainingSpent)
-  if def.kind == "ability" and (def.rankable or def.rank) then
+  if ns.Ranks.FamilyKey(def) and (def.rankable or def.rank) then
     local base = ns.Ranks.Base(def)
     local spent = trainingSpent == nil and def.cost - base.cost or trainingSpent
     return math.ceil((base.cost + math.max(0, spent)) / 2)
@@ -187,103 +187,30 @@ function Economy.GearWeights(round, bagsOwned)
   }
 end
 
-local function pickBag(rng, pool, round, quality, exclude)
-  local weighted = {}
+local function pickBag(rng, pool, round, quality, exclude, classKey)
+  local weighted, maximum = {}, 0
   for i = 1, #pool do
     local def = pool[i]
     if def.kind == "bag" and def.quality == quality and not exclude[def.id] then
       local w = 10 - math.abs(def.minRound - round)
       if w < 1 then w = 1 end
-      weighted[#weighted + 1] = { value = def, weight = w }
+      local baseWeight = ns.ShopWeights.BaseWeight(def, classKey)
+      maximum = math.max(maximum, baseWeight)
+      weighted[#weighted + 1] = { value = def, weight = baseWeight, ageWeight = w }
     end
   end
   if #weighted == 0 then return nil end
+  for _, entry in ipairs(weighted) do
+    entry.weight = math.max(1e-300, entry.weight / maximum) * entry.ageWeight
+  end
   return rng:PickWeighted(weighted)
 end
 
-local function pickAbility(rng, candidates, talents, formPreference)
-  if type(talents) ~= "table" then talents = nil end
-  if #candidates <= 1 or type(talents) ~= "table" and not formPreference then return rng:Pick(candidates) end
-  local weights, count, total = {}, 0, 0
-  for index, def in ipairs(candidates) do
-    local spec = ns.Mastery.Spec(def)
-    if spec then
-      local points = talents and talents[spec]
-      if type(points) ~= "number" or points ~= points then points = 0 end
-      local weight = 1 + math.min(10, math.max(0, points)) * 0.05
-      weights[index] = weight
-      count, total = count + 1, total + weight
-    end
-  end
-  local entries, changed = {}, total ~= count
-  local feralTotal, preferredTotal = 0, 0
-  for index, def in ipairs(candidates) do
-    entries[index] = { value = def, weight = weights[index] and weights[index] * count / total or 1 }
-    if formPreference and ns.Mastery.Spec(def) == "feral" then
-      feralTotal = feralTotal + entries[index].weight
-      local preferred = matchesForm(def, formPreference)
-      preferredTotal = preferredTotal + entries[index].weight * (preferred and 2 or 1)
-    end
-  end
-  if preferredTotal > feralTotal then
-    for _, entry in ipairs(entries) do
-      local def = entry.value
-      if ns.Mastery.Spec(def) == "feral" then
-        local preferred = matchesForm(def, formPreference)
-        local weight = entry.weight * (preferred and 2 or 1) * feralTotal / preferredTotal
-        if math.abs(weight - entry.weight) > 0.000000001 then changed = true end
-        entry.weight = weight
-      end
-    end
-  end
-  if not changed then return rng:Pick(candidates) end
-  return rng:PickWeighted(entries)
-end
-
-local GEAR_ROLES = {
-  WARRIOR = { arms = { "ap" }, fury = { "ap" }, prot = { "ap", "block" } },
-  HUNTER = { bm = { "ap" }, mm = { "ap" }, surv = { "ap", "sp" } },
-  DRUID = { balance = { "sp" }, feral = { "ap" }, resto = { "healing" } },
-  PALADIN = { holy = { "healing" }, protection = { "sp", "block" }, retribution = { "ap" } },
-  ROGUE = { assassination = { "ap" }, combat = { "ap" }, subtlety = { "ap" } },
-  PRIEST = { discipline = { "sp", "healing" }, holy = { "healing" }, shadow = { "sp" } },
-  SHAMAN = { elemental = { "sp" }, enhancement = { "ap" }, restoration = { "healing" } },
-  MAGE = { arcane = { "sp" }, fire = { "sp" }, frost = { "sp" } },
-  WARLOCK = { affliction = { "sp" }, demonology = { "sp" }, destruction = { "sp" } },
-}
-
 function Economy.GearAffinity(def, classKey, talents)
-  local roles = GEAR_ROLES[classKey]
-  if not roles or type(talents) ~= "table" then return 1 end
-  local total, relevant, maximum = 0, 0, 0
-  for spec, stats in pairs(roles) do
-    local points = talents[spec]
-    if type(points) == "number" and points == points and points > 0 then
-      points = math.min(10, points)
-      total, maximum = total + points, math.max(maximum, points)
-      for _, stat in ipairs(stats) do
-        if (def.stats[stat] or 0) > 0 then relevant = relevant + points break end
-      end
-    end
-  end
-  if maximum < 2 then return 1 end
-  return 1 + 1.5 * relevant / total
+  return ns.ShopWeights.GearAffinity(def, classKey, talents)
 end
 
-local function pickGear(rng, candidates, classKey, talents)
-  if #candidates <= 1 then return rng:Pick(candidates) end
-  local entries, changed, first = {}, false
-  for index, def in ipairs(candidates) do
-    local weight = Economy.GearAffinity(def, classKey, talents)
-    entries[index] = { value = def, weight = weight }
-    first = first or weight
-    if weight ~= first then changed = true end
-  end
-  if not changed then return rng:Pick(candidates) end
-  return rng:PickWeighted(entries)
-end
-
-local function pickByQuality(rng, pool, quality, exclude, category, bucket, talents, formPreference, classKey)
+local function pickByQuality(rng, pool, quality, exclude, category, bucket, talents, formPreference, classKey, shopContext)
   local candidates = {}
   for i = 1, #pool do
     local def = pool[i]
@@ -293,30 +220,31 @@ local function pickByQuality(rng, pool, quality, exclude, category, bucket, tale
     end
   end
   if #candidates == 0 then return nil end
-  if category == "ability" then return pickAbility(rng, candidates, talents, formPreference) end
-  return pickGear(rng, candidates, classKey, talents)
+  return ns.ShopWeights.Pick(rng, candidates, classKey, talents, shopContext)
 end
 
-local function pickOffer(rng, pool, quality, exclude, category, bucket, allowBag, round, talents, formPreference, classKey)
+local function pickOffer(rng, pool, quality, exclude, category, bucket, allowBag, round, talents, formPreference, classKey, shopContext)
   for q = quality, 1, -1 do
     local def
     if bucket == "bag" then
-      if allowBag then def = pickBag(rng, pool, round, q, exclude) end
+      if allowBag then def = pickBag(rng, pool, round, q, exclude, classKey) end
     else
-      def = pickByQuality(rng, pool, q, exclude, category, bucket, talents, formPreference, classKey)
+      def = pickByQuality(rng, pool, q, exclude, category, bucket, talents, formPreference, classKey, shopContext)
     end
-    if not def then def = pickByQuality(rng, pool, q, exclude, category, nil, talents, formPreference, classKey) end
-    if not def and allowBag then def = pickBag(rng, pool, round, q, exclude) end
+    if not def then def = pickByQuality(rng, pool, q, exclude, category, nil, talents, formPreference, classKey, shopContext) end
+    if not def and allowBag then def = pickBag(rng, pool, round, q, exclude, classKey) end
     if def then return def end
   end
   return nil
 end
 
-function Economy.GenerateShop(rng, classKey, round, bagsOwned, owned, reservedId, talents, guaranteeBag, formPreference, companionId)
+function Economy.GenerateShop(rng, classKey, round, bagsOwned, owned, reservedId, talents, guaranteeBag, formPreference, companionId, shopContext)
   bagsOwned = bagsOwned or 0
   local pool = ns.GetShopPool(classKey, round)
   local counts = {}
   for id, amount in pairs(owned or {}) do addStock(counts, id, amount) end
+  -- Only owned items inform fit; offers drawn later are not purchases.
+  shopContext = shopContext or ns.ShopWeights.Context(classKey, nil, nil, owned, formPreference)
   local groups = { ability = {}, gear = {} }
   local sales = {}
   local exclude = {}
@@ -356,11 +284,11 @@ function Economy.GenerateShop(rng, classKey, round, bagsOwned, owned, reservedId
       local def
       if guaranteeBag and allowBag then
         for q = quality, 1, -1 do
-          def = pickBag(rng, pool, round, q, exclude)
+          def = pickBag(rng, pool, round, q, exclude, classKey)
           if def then break end
         end
       end
-      if not def then def = pickOffer(rng, pool, quality, exclude, category, bucket, allowBag, round, talents, formPreference, classKey) end
+      if not def then def = pickOffer(rng, pool, quality, exclude, category, bucket, allowBag, round, talents, formPreference, classKey, shopContext) end
       if category == "ability" and companion and not exclude[companion.id] and companion.quality <= quality then def = companion end
       if def then
         draw(def)

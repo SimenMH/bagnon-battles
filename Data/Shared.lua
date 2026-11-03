@@ -6,7 +6,7 @@ local CASTER_MACE = { "DRUID", "PALADIN", "PRIEST", "SHAMAN" }
 local CASTERS = { "DRUID", "PALADIN", "PRIEST", "SHAMAN", "MAGE", "WARLOCK" }
 local SPELL_USERS = { "DRUID", "HUNTER", "PALADIN", "PRIEST", "SHAMAN", "MAGE", "WARLOCK" }
 local EARLY_ARMOR = { "WARRIOR", "HUNTER", "DRUID", "PALADIN", "ROGUE", "PRIEST", "SHAMAN", "MAGE", "WARLOCK" }
-local PHYSICAL_JEWELRY = { "WARRIOR", "HUNTER", "DRUID" }
+local PHYSICAL_JEWELRY = H.PHYSICAL
 
 H.Weapon{ id = 105, key = "battle_axe", name = "Battle Axe", icon = I("inv_throwingaxe_05"), quality = 2, minRound = 2, weaponType = "axe", hands = 2, classes = H.ALL_AXE, weaponMin = 13, weaponMax = 19, speed = 3.4,
   triggers = { { on = "hit", chance = 20, effects = { { type = "damage", weapon = true, weaponPct = 0.5, school = "physical" } } } } }
@@ -98,3 +98,45 @@ H.Armor{ id = 383, key = "fine_leather_gloves", name = "Fine Leather Gloves", ic
 H.Armor{ id = 384, key = "prospectors_cuffs", name = "Prospector's Cuffs", icon = I("inv_bracer_07"), quality = 2, cost = 4, minRound = 2, armorType = "leather", slot = "wrist", classes = { "WARRIOR", "HUNTER", "DRUID", "PALADIN", "ROGUE", "SHAMAN" }, stats = { ap = 10, crit = 2, armor = 4, hp = 8 } }
 H.Armor{ id = 385, key = "fine_leather_boots", name = "Fine Leather Boots", icon = I("inv_boots_06"), quality = 1, cost = 3, armorType = "leather", slot = "feet", classes = { "WARRIOR", "HUNTER", "DRUID", "PALADIN", "ROGUE", "SHAMAN" }, stats = { armor = 10, hp = 15 } }
 H.Armor{ id = 386, key = "fine_leather_belt", name = "Fine Leather Belt", icon = I("inv_belt_04"), quality = 2, cost = 4, minRound = 2, armorType = "leather", slot = "waist", classes = { "WARRIOR", "HUNTER", "DRUID", "PALADIN", "ROGUE", "SHAMAN" }, stats = { ap = 8, armor = 4, hp = 10 } }
+
+H.Weapon{ id = 400, key = "hand_axe", name = "Hand Axe", icon = I("inv_axe_11"), quality = 1, cost = 3, shopWeight = 1.8, weaponType = "axe", classes = H.ALL_AXE, shape = S.L, weaponMin = 5, weaponMax = 8, speed = 2.5, stats = { ap = 4 } }
+H.Weapon{ id = 401, key = "twin_tomahawk", name = "Twin Tomahawk", icon = I("inv_throwingaxe_03"), quality = 2, cost = 5, minRound = 2, shopWeight = 1.2, weaponType = "axe", classes = H.ALL_AXE, shape = S.L, weaponMin = 5, weaponMax = 8, speed = 1.8, stats = { ap = 8, crit = 3 },
+  shopAffinities = { WARRIOR = { arms = 0.5, fury = 1.5, prot = 0.75 } } }
+H.Weapon{ id = 402, key = "crescent_axe", name = "Crescent Axe", icon = I("inv_axe_03"), quality = 3, cost = 8, minRound = 4, weaponType = "axe", classes = H.ALL_AXE, shape = S.L, weaponMin = 11, weaponMax = 17, speed = 2.6, stats = { ap = 20, hp = 15 } }
+H.Weapon{ id = 403, key = "deathbringer", name = "Deathbringer", icon = I("inv_axe_15"), quality = 4, cost = 12, minRound = 8, shopWeight = 0.6, weaponType = "axe", classes = H.ALL_AXE, shape = S.L, weaponMin = 17, weaponMax = 25, speed = 2.9, stats = { ap = 28, crit = 4 } }
+H.Weapon{ id = 404, key = "ironwood_mace", name = "Ironwood Mace", icon = I("inv_mace_01"), quality = 1, cost = 3, shopWeight = 1.8, weaponType = "mace", classes = H.ALL_MACE, weaponMin = 5, weaponMax = 7, speed = 2.6, stats = { ap = 4, armor = 6 } }
+H.Weapon{ id = 405, key = "skullcrusher", name = "Skullcrusher", icon = I("inv_mace_04"), quality = 2, cost = 5, minRound = 2, shopWeight = 1.2, weaponType = "mace", classes = H.ALL_MACE, shape = S.L, weaponMin = 7, weaponMax = 11, speed = 2.5, stats = { ap = 10, armor = 10 } }
+H.Weapon{ id = 406, key = "castigator", name = "Castigator", icon = I("inv_mace_26"), quality = 4, cost = 12, minRound = 8, shopWeight = 0.6, weaponType = "mace", classes = H.ALL_MACE, shape = S.T, weaponMin = 16, weaponMax = 23, speed = 2.6, stats = { ap = 28, armor = 15 } }
+H.Armor{ id = 407, key = "bulwark_gauntlets", name = "Bulwark Gauntlets", icon = I("inv_gauntlets_29"), quality = 2, cost = 5, minRound = 2, shopWeight = 1.2, armorType = "plate", slot = "hands", classes = H.PLATE, stats = { armor = 12, block = 6, hp = 25 },
+  shopAffinities = { WARRIOR = { arms = 0.5, fury = 0.5, prot = 1.5 }, PALADIN = { holy = 0.5, protection = 1.5, retribution = 0.5 } } }
+H.Armor{ id = 408, key = "fleetfoot_boots", name = "Fleetfoot Boots", icon = I("inv_boots_05"), quality = 2, cost = 5, minRound = 3, armorType = "leather", slot = "feet", classes = H.PHYSICAL, stats = { ap = 14, haste = 4, armor = 6, hp = 10 } }
+H.Jewel{ id = 409, key = "tempered_band", name = "Tempered Band", icon = I("inv_jewelry_ring_03"), kind = "ring", quality = 2, cost = 5, minRound = 2, shopWeight = 1.2, classes = H.PHYSICAL, stats = { ap = 12, hp = 15 } }
+H.Jewel{ id = 410, key = "bloodguard_emblem", name = "Bloodguard Emblem", icon = I("inv_jewelry_talisman_01"), kind = "trinket", quality = 3, cost = 8, minRound = 5, shopWeight = 0.5, classes = H.PHYSICAL, stats = { ap = 8, hp = 30 },
+  use = { once = true, reactive = true, cd = 30, initialDelay = 0, condition = "below35", effects = {
+    { type = "buff", key = "bloodguard_emblem_haste", stat = "haste", value = 18, duration = 8, name = "Bloodguard Emblem" },
+    { type = "buff", key = "bloodguard_emblem_lifesteal", stat = "lifesteal", value = 6, duration = 8, name = "Bloodguard Emblem" },
+  } } }
+ns.RegisterItem{ id = 411, key = "duelists_buckler", name = "Duelist's Buckler", icon = I("inv_shield_04"), kind = "shield", quality = 2, cost = 5, minRound = 3, shopWeight = 0.8, shape = S.T, classes = H.ALL_SHIELD, stats = { armor = 14, block = 6, blockChance = 25, dodge = 5, ap = 8 }, tags = { "shield", "defensive" } }
+
+ns.RegisterItem{ id = 412, key = "dense_sharpening_stone", name = "Dense Sharpening Stone", icon = I("inv_stone_sharpeningstone_05"), kind = "consumable", quality = 2, cost = 4, minRound = 2, shopWeight = 0.9, shape = S.one, classes = H.PHYSICAL,
+  shopClassWeights = { DRUID = 0.4, HUNTER = 0.65 },
+  shopAffinities = {
+    WARRIOR = { arms = 1, fury = 1, prot = 0.8 }, HUNTER = { bm = 0.25, mm = 0.25, surv = 1 },
+    DRUID = { balance = 0.15, feral = 0.35, resto = 0.15 }, PALADIN = { holy = 0.25, protection = 0.75, retribution = 1 },
+    ROGUE = { assassination = 0.8, combat = 1, subtlety = 0.8 }, SHAMAN = { elemental = 0.2, enhancement = 1, restoration = 0.2 },
+  },
+  adjacency = { { side = "front", match = { kind = "weapon", tag = "melee", anyWeaponType = { "axe", "sword", "dagger" } }, once = true, mods = { flat = 4 } } } }
+H.Jewel{ id = 413, key = "styleens_impeding_scarab", name = "Styleen's Impeding Scarab", icon = I("inv_misc_ahnqirajtrinket_01"), kind = "trinket", quality = 3, cost = 7, minRound = 5, shopWeight = 0.65, shape = S.L, classes = H.ALL_SHIELD,
+  shopAffinities = { WARRIOR = { arms = 0.3, fury = 0.2, prot = 1 }, PALADIN = { holy = 0.25, protection = 1, retribution = 0.25 },
+    SHAMAN = { elemental = 0.35, enhancement = 0.8, restoration = 0.35 } },
+  adjacency = { { corners = true, match = { kind = "shield" }, once = true, stats = { block = 8, blockChance = 5 } } } }
+ns.RegisterItem{ id = 414, key = "dark_rune", name = "Dark Rune", icon = I("spell_shadow_sealofkings"), kind = "consumable", quality = 3, cost = 7, minRound = 5, shopWeight = 0.5, shape = S.one, classes = SPELL_USERS,
+  shopClassWeights = { HUNTER = 0.65, WARLOCK = 0.8 },
+  shopAffinities = {
+    DRUID = { balance = 1, feral = 0.35, resto = 1 }, HUNTER = { bm = 0.35, mm = 1, surv = 0.75 },
+    PALADIN = { holy = 1, protection = 1, retribution = 0.75 }, PRIEST = { discipline = 1, holy = 1, shadow = 1 },
+    SHAMAN = { elemental = 1, enhancement = 0.5, restoration = 1 }, MAGE = { arcane = 1, fire = 1, frost = 1 },
+    WARLOCK = { affliction = 0.75, demonology = 0.5, destruction = 1 },
+  },
+  use = { cd = 18, initialDelay = 4, condition = "lowMana", healthCostPct = 0.05, effects = { { type = "resource", resource = "mana", amount = 35 } } },
+  adjacency = { { side = "back", empty = true, once = true, selfMods = { haste = 25 } } } }

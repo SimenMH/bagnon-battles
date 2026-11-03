@@ -43,7 +43,7 @@ ns.RegisterSet{ key = "deathmist", name = "Deathmist Raiment", bonuses = {
 ns.RegisterSet{ key = "felheart", name = "Felheart Raiment", bonuses = {
   [2] = { triggers = { { on = "anyHit", match = { kind = "pet" }, effects = { { type = "resource", resource = "mana", amount = 2 } } } }, text = "Demon hits restore 2 Mana." },
   [4] = { triggers = { { on = "healthSpent", condition = "provides:pet", effects = { { type = "cast", target = "all", match = { kind = "pet" } } } } }, text = "Spending Health grants your demon an extra attack." },
-  [6] = { double = { kind = "pet" }, stats = { petPct = 60 }, triggers = { { on = "anyHit", match = { kind = "pet" }, effects = { { type = "absorb", fromEvent = 0.4 } } } }, text = "Demons attack twice and deal 60% more damage. Their hits shield you for 40% of damage dealt." },
+  [6] = { double = { kind = "pet" }, stats = { petPct = 60 }, triggers = { { on = "anyHit", match = { kind = "pet" }, effects = { { type = "absorb", fromEvent = 0.4 } } } }, text = "Demons attack twice. Their hits shield you for 40% of damage dealt." },
 } }
 ns.RegisterSet{ key = "nemesis", name = "Nemesis Raiment", bonuses = {
   [2] = { triggers = { { on = "anyUse", match = { key = "shadow_bolt" }, effects = { { type = "tickDots", match = { tag = "fire" } } } } }, text = "Shadow Bolt immediately ticks your Fire damage-over-time effects." },
@@ -53,7 +53,7 @@ ns.RegisterSet{ key = "nemesis", name = "Nemesis Raiment", bonuses = {
 ns.RegisterSet{ key = "plagueheart", name = "Plagueheart Raiment", bonuses = {
   [2] = { triggers = { { on = "dotTick", match = { tag = "affliction" }, every = 6, effects = { { type = "heal", pctMax = 0.02, noCrit = true } } } }, text = "Every 6 Affliction ticks heal 2% maximum Health." },
   [4] = { triggers = { { on = "healed", icd = 1, effects = { { type = "cdr", target = "all", match = { tag = "affliction" }, amount = 0.5, clampReady = true } } } }, text = "Effective healing reduces Affliction cooldowns by 0.5s, once per second." },
-  [6] = { double = { tag = "affliction" }, flags = { "revive" }, stats = { healing = 50 }, text = "Affliction spells cast twice. Gain 50 Healing Power and return to full Health once instead of dying." },
+  [6] = { double = { tag = "affliction" }, flags = { "revive" }, stats = { healing = 50 }, text = "Affliction spells cast twice. Return to full Health once instead of dying." },
 } }
 
 H.SetPieces{ key = "dreadmist", firstId = 9450, tag = "affliction", classes = WARLOCK, armorType = "cloth", quality = 3, rounds = { 3, 4, 5, 6 }, statScale = { sp = 0.9 },

@@ -31,7 +31,7 @@ ns.RegisterSet{ key = "might", name = "Battlegear of Might",
   bonuses = {
     [2] = { triggers = { { on = "block", effects = { { type = "resource", resource = "rage", amount = 4 } } } }, text = "Blocking generates 4 rage." },
     [4] = { stats = { block = 20, blockChance = 15 } },
-    [6] = { flags = { "blockSlam" }, stats = { block = 30, dr = 25 }, text = "Blocks trigger your Shield Slam for free." },
+    [6] = { triggers = { { on = "block", icd = 2, effects = { { type = "cast", key = "shield_slam" } } } }, stats = { block = 30, dr = 25 }, text = "Blocks trigger your Shield Slam for free (2s cooldown)." },
   } }
 ns.RegisterSet{ key = "wrath", name = "Battlegear of Wrath",
   bonuses = {
@@ -61,8 +61,8 @@ ns.RegisterSet{ key = "dragonstalker", name = "Dragonstalker Armor",
 ns.RegisterSet{ key = "dreadnaught", name = "Dreadnaught's Battlegear",
   bonuses = {
     [2] = { triggers = { { on = "resourceSpent", resource = "rage", everyAmount = 40, effects = { { type = "cdr", target = "all", match = { tag = "autoattack" }, amount = 1 } } } }, text = "Every 40 Rage spent advances auto-attacks by 1s." },
-    [4] = { triggers = { { on = "anyCrit", healing = false, match = { tag = "autoattack" }, effects = { { type = "cdr", target = "all", match = { key = "bloodthirst" }, amount = 1 } } } }, text = "Auto-attack crits advance Bloodthirst by 1s." },
-    [6] = { double = { tag = "autoattack" }, stats = { lifesteal = 15 }, text = "Auto-attacks hit twice. Gain 15% Lifesteal." },
+    [4] = { triggers = { { on = "anyCrit", healing = false, match = { tag = "autoattack", anyTag = { "melee" } }, icd = 0.5, effects = { { type = "cdr", target = "all", match = { kind = "ability", tag = "strike", anyTag = { "melee" }, damaging = "direct" }, amount = 0.35, clampReady = true } } } }, text = "Melee auto-attack crits advance your direct melee strikes by 0.35s (0.5s cooldown)." },
+    [6] = { double = { tag = "autoattack" }, stats = { lifesteal = 15 }, text = "Auto-attacks hit twice." },
   } }
 ns.RegisterSet{ key = "cryptstalker", name = "Cryptstalker Armor",
   bonuses = {

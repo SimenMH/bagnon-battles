@@ -112,6 +112,106 @@ function H.Merge(def, extra)
   return def
 end
 
+-- Opt-in authoring helpers. Values are normalized in the definitions themselves,
+-- never only in their tooltip text. No class or rank opts in automatically.
+local PERCENT_STATS = ns.Util.Set{ "hpPct", "crit", "critDamage", "haste", "dodge", "blockChance", "lifesteal", "dr",
+  "dmgPct", "healPct", "petPct", "rangedPct", "meleePct", "spellPct", "ragePct", "rageTakenPct" }
+local FRACTION_FIELDS = ns.Util.Set{ "coef", "pctMax", "perPointPctMax", "blockScale", "weaponPct", "gearCoef", "fromEvent" }
+
+local function finitePercent(value)
+  return type(value) == "number" and value == value and value > -math.huge and value < math.huge
+end
+
+-- Input is percentage points: 99 -> 100, 1.58 -> 1.5, 1.19 -> 1.25.
+-- Sub-1% values stay exact; fractional coefficients use the field-map conversion.
+function H.FriendlyPercent(value)
+  assert(finitePercent(value), "Percentage must be a finite number")
+  local magnitude = math.abs(value)
+  if magnitude < 1 then return value end
+  local step = magnitude >= 10 and 5 or 0.25
+  local rounded = math.floor(magnitude / step + 0.5) * step
+  return value < 0 and -rounded or rounded
+end
+
+local function percentageTarget(base, path)
+  assert(type(path) == "string", "Percentage path must be a string")
+  local stat = path:match("^stats%.([%a][%w_]*)$")
+  if stat and PERCENT_STATS[stat] and base.stats then return base.stats, stat, "percent" end
+  local index, field = path:match("^use%.effects%.([1-9]%d*)%.([%a][%w_]*)$")
+  local effect = index and base.use and base.use.effects and base.use.effects[tonumber(index)]
+  if not index then
+    local trigger, effectIndex, effectField = path:match("^triggers%.([1-9]%d*)%.effects%.([1-9]%d*)%.([%a][%w_]*)$")
+    effect = trigger and base.triggers and base.triggers[tonumber(trigger)]
+    effect = effect and effect.effects and effect.effects[tonumber(effectIndex)]
+    field = effectField
+  end
+  if effect then
+    if FRACTION_FIELDS[field] then return effect, field, "fraction" end
+    if field == "value" and (effect.type == "buff" or effect.type == "debuff") and PERCENT_STATS[effect.stat] then
+      return effect, field, "percent"
+    end
+  end
+  index = path:match("^triggers%.([1-9]%d*)%.chance$")
+  if index and base.triggers then return base.triggers[tonumber(index)], "chance", "percent" end
+  error("Unsupported percentage path: " .. path)
+end
+
+local function percentageFields(base, fields)
+  assert(type(base) == "table" and type(fields) == "table", "Percentage authoring needs a base and an explicit field map")
+  local resolved = {}
+  for path, spec in pairs(fields) do
+    assert(type(spec) == "table", "Percentage field needs unit and scale: " .. tostring(path))
+    for key in pairs(spec) do assert(key == "unit" or key == "scale", "Unknown percentage field option: " .. tostring(key)) end
+    assert(spec.unit == "percent" or spec.unit == "fraction", "Unknown percentage unit: " .. tostring(spec.unit))
+    assert(spec.scale == false or spec.scale == "power" or spec.scale == "mult", "Unknown percentage scale: " .. tostring(spec.scale))
+    local holder, key, unit = percentageTarget(base, path)
+    assert(holder and finitePercent(holder[key]), "Missing numeric percentage field: " .. tostring(path))
+    assert(spec.unit == unit, "Percentage unit does not match " .. path)
+    resolved[#resolved + 1] = { path = path, holder = holder, key = key, unit = unit, scale = spec.scale }
+  end
+  return resolved
+end
+
+local function friendlyValue(value, unit)
+  assert(finitePercent(value), "Percentage field must be a finite number")
+  local divisor = unit == "fraction" and 100 or 1
+  return H.FriendlyPercent(value * divisor) / divisor
+end
+
+-- fields = { ["use.effects.1.coef"] = { unit = "fraction", scale = "power" },
+--   ["triggers.1.effects.1.value"] = { unit = "percent", scale = "mult" } }
+-- Explicit overrides win over base * declared scale. All validation and rounding
+-- finishes before replacing overrides, so an authoring error leaves the rule intact.
+function H.FriendlyRankPercentages(base, rule, fields)
+  assert(type(rule) == "table", "Percentage authoring needs a rank rule")
+  assert(rule.overrides == nil or type(rule.overrides) == "table", "Rank overrides must be a table")
+  local resolved = percentageFields(base, fields)
+  local overrides = ns.Util.DeepCopy(rule.overrides or {})
+  for _, field in ipairs(resolved) do
+    local value = overrides[field.path]
+    if value == nil then
+      local factor = field.scale == false and 1 or rule.scale and rule.scale[field.scale]
+      assert(finitePercent(factor) and factor > 0, "Missing positive declared percentage scale for " .. field.path)
+      value = field.holder[field.key] * factor
+    end
+    overrides[field.path] = friendlyValue(value, field.unit)
+  end
+  rule.overrides = overrides
+  return rule
+end
+
+-- Base curation is a separate explicit operation. It shares the field map but
+-- applies no rank multiplier. Unlisted percentages and all flat quantities stay put.
+function H.FriendlyBasePercentages(base, fields)
+  local changes = {}
+  for _, field in ipairs(percentageFields(base, fields)) do
+    changes[#changes + 1] = { holder = field.holder, key = field.key,
+      value = friendlyValue(field.holder[field.key], field.unit) }
+  end
+  for _, change in ipairs(changes) do change.holder[change.key] = change.value end
+  return base
+end
+
 function H.Damage(low, high, coef, school, extra)
   local e = extra or {}
   e.type, e.min, e.max, e.coef, e.school = "damage", low, high, coef, school

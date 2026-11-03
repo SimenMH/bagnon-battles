@@ -5,7 +5,6 @@ ns.Mastery = Mastery
 
 Mastery.MAX_POINTS = 10
 Mastery.THRESHOLDS = { 2, 5, 8 }
-Mastery.FURY_BLOODTHIRST_HITS = 6
 Mastery.SPEC_BONUS_PCT = 2
 
 local ABILITY_KINDS = { ability = true, form = true, pet = true, ammo = true }
@@ -23,9 +22,9 @@ end
 
 Mastery.TREES = {
   WARRIOR = {
-    arms = definition("Arms", "Ability_Warrior_SavageBlow", "Arms abilities and Heroic Strike gain 10% Critical Strike.", "Arms abilities and Heroic Strike gain 25% Critical Strike Damage.", "On Mortal Strike: Make an extra melee auto-attack."),
-    fury = definition("Fury", "Spell_Nature_BloodLust", "Fury abilities cost 10% less Rage.", "On melee auto-attack hit: Advance Bloodthirst by 0.5s.", string.format("Every %d melee auto-attack hits: Cast Bloodthirst for free.", Mastery.FURY_BLOODTHIRST_HITS)),
-    prot = definition("Protection", "Ability_Defend", "Your equipped shield gains 4 Block Value.", "On block: Restore 3 Rage.", "Shield Slam grants an absorb equal to 50% of its stored blocked damage."),
+    arms = definition("Arms", "Ability_Warrior_SavageBlow", "Arms abilities and Heroic Strike gain 10% Critical Strike.", "Arms abilities and Heroic Strike gain 25% Critical Strike Damage.", "Every 60 Rage spent on Arms strikes and Heroic Strike: Make an extra melee auto-attack."),
+    fury = definition("Fury", "Spell_Nature_BloodLust", "Fury abilities cost 10% less Rage.", "On melee auto-attack hit: Advance Bloodthirst by 0.5s and other Rage-using melee strikes by 0.25s.", "Every 40 Rage spent on melee abilities: Your next paid direct melee strike deals 20% more damage within 8s. Does not stack."),
+    prot = definition("Protection", "Ability_Defend", "Your equipped shield gains 4 Block Value.", "On block: Restore 3 Rage.", "Paid Protection strikes grant an absorb equal to 75% of Block Value. Shield Slam also absorbs 50% of its stored blocked damage."),
   },
   HUNTER = {
     bm = definition("Beast Mastery", "Ability_Hunter_BeastTaming", "Beast Mastery abilities cost 10% less Focus.", "On pet auto-attack hit: Restore 4 Focus.", "Every 3 pet auto-attack hits: Cast Bite for free, or Claw if you have no Bite."),
@@ -37,6 +36,17 @@ Mastery.TREES = {
     feral = definition("Feral Combat", "Ability_Druid_CatForm", "Feral abilities cost 10% less Energy and Rage.", "Finishers heal 2% maximum health. Every 30 Rage spent on Bear attacks heals 2% maximum health.", "On paid Feral ability crit: Reduce your form attack cooldown by 1s."),
     resto = definition("Restoration", "Spell_Nature_HealingTouch", "Restoration spells cost 10% less Mana.", "On effective Restoration healing tick: Advance Swiftmend by 0.25s.", "Effective Restoration healing grants an absorb equal to 35% of the healing."),
   },
+}
+
+Mastery.TREES.WARRIOR.arms.tiers[3].triggers = {
+  { on = "resourceSpent", resource = "rage", match = { kind = "ability", tag = "arms", anyTag = { "strike" }, damaging = "direct" },
+    everyAmount = 60, effects = { { type = "extraAttack", count = 1 } } },
+}
+Mastery.TREES.WARRIOR.fury.tiers[3].triggers = {
+  { on = "resourceSpent", resource = "rage", match = { kind = "ability", tag = "melee" }, everyAmount = 40,
+    effects = { { type = "buff", key = "fury_spending", name = "Fury", target = "all",
+      match = { kind = "ability", tag = "melee", anyTag = { "strike" }, damaging = "direct" },
+      paidOnly = true, stat = "dmgPct", value = 20, charges = 1, duration = 8 } } },
 }
 
 function Mastery.Budget(round)

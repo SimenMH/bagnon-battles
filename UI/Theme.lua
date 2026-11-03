@@ -496,13 +496,35 @@ end
 function T.CreateItemGlyph(parent, cellSize)
   local glyph = CreateFrame("Frame", nil, parent)
   glyph.cells = {}
+  glyph.effectCells = {}
   glyph.cellSize = cellSize or 8
   function glyph:SetItem(def, rotation)
-    local shape = ns.RotationCells(def, rotation or 0)
-    local cell = self.cellSize
-    local r, g, b = T.QualityColor(def.quality)
-    self:SetSize(shape.w * cell, shape.h * cell)
     for _, texture in ipairs(self.cells) do texture:Hide() end
+    for _, texture in ipairs(self.effectCells) do texture:Hide() end
+    self.def, self.rotation = def, rotation or 0
+    if not def then self.geometry = nil self:SetSize(1, 1) return end
+    local geometry = ns.UI.GridView.GlyphGeometry(def, self.rotation)
+    self.geometry = geometry
+    local shape = geometry.shape
+    local cell = self.cellSize
+    if self.maxWidth then cell = math.min(cell, math.max(1, math.floor(self.maxWidth / geometry.w))) end
+    if self.maxHeight then cell = math.min(cell, math.max(1, math.floor(self.maxHeight / geometry.h))) end
+    self.drawCellSize = cell
+    local r, g, b = T.QualityColor(def.quality)
+    self:SetSize(geometry.w * cell, geometry.h * cell)
+    for i, position in ipairs(geometry.effects) do
+      local texture = self.effectCells[i]
+      if not texture then
+        texture = self:CreateTexture(nil, "ARTWORK", nil, -1)
+        texture:SetTexture(T.TEX.white)
+        self.effectCells[i] = texture
+      end
+      texture:SetSize(math.max(1, cell - 1), math.max(1, cell - 1))
+      texture:ClearAllPoints()
+      texture:SetPoint("TOPLEFT", self, "TOPLEFT", (position[1] - geometry.minX) * cell, -(position[2] - geometry.minY) * cell)
+      texture:SetVertexColor(0.3, 0.7, 1, 0.7)
+      texture:Show()
+    end
     for i, position in ipairs(shape.cells) do
       local texture = self.cells[i]
       if not texture then
@@ -510,13 +532,14 @@ function T.CreateItemGlyph(parent, cellSize)
         texture:SetTexture(T.TEX.panelSmall)
         self.cells[i] = texture
       end
-      texture:SetSize(cell - 1, cell - 1)
+      texture:SetSize(math.max(1, cell - 1), math.max(1, cell - 1))
       texture:ClearAllPoints()
-      texture:SetPoint("TOPLEFT", self, "TOPLEFT", position[1] * cell, -position[2] * cell)
+      texture:SetPoint("TOPLEFT", self, "TOPLEFT", (position[1] - geometry.minX) * cell, -(position[2] - geometry.minY) * cell)
       texture:SetVertexColor(r, g, b, 0.85)
       texture:Show()
     end
   end
+  function glyph:SetRotation(rotation) self:SetItem(self.def, rotation) end
   return glyph
 end
 

@@ -23,7 +23,7 @@ end
 
 Mastery.TREES = {
   WARRIOR = {
-    arms = definition("Arms", "Ability_Warrior_SavageBlow", "Arms abilities gain 10% Critical Strike.", "Arms abilities gain 25% Critical Strike Damage.", "On Mortal Strike: Make an extra melee auto-attack."),
+    arms = definition("Arms", "Ability_Warrior_SavageBlow", "Arms abilities and Heroic Strike gain 10% Critical Strike.", "Arms abilities and Heroic Strike gain 25% Critical Strike Damage.", "On Mortal Strike: Make an extra melee auto-attack."),
     fury = definition("Fury", "Spell_Nature_BloodLust", "Fury abilities cost 10% less Rage.", "On melee auto-attack hit: Advance Bloodthirst by 0.5s.", string.format("Every %d melee auto-attack hits: Cast Bloodthirst for free.", Mastery.FURY_BLOODTHIRST_HITS)),
     prot = definition("Protection", "Ability_Defend", "Your equipped shield gains 4 Block Value.", "On block: Restore 3 Rage.", "Shield Slam grants an absorb equal to 50% of its stored blocked damage."),
   },
@@ -34,7 +34,7 @@ Mastery.TREES = {
   },
   DRUID = {
     balance = definition("Balance", "Spell_Nature_StarFall", "Balance spells cost 10% less Mana.", "On Balance spell crit: Advance Starfire by 1s.", "Every 3 paid Balance spells: Advance Starfire by 4s."),
-    feral = definition("Feral Combat", "Ability_Druid_CatForm", "Feral abilities cost 10% less Energy and Rage.", "Finishers heal 3% maximum health. Every 30 Rage spent on Bear attacks heals 3% maximum health.", "On paid Feral ability crit: Reduce your form attack cooldown by 1s."),
+    feral = definition("Feral Combat", "Ability_Druid_CatForm", "Feral abilities cost 10% less Energy and Rage.", "Finishers heal 2% maximum health. Every 30 Rage spent on Bear attacks heals 2% maximum health.", "On paid Feral ability crit: Reduce your form attack cooldown by 1s."),
     resto = definition("Restoration", "Spell_Nature_HealingTouch", "Restoration spells cost 10% less Mana.", "On effective Restoration healing tick: Advance Swiftmend by 0.25s.", "Effective Restoration healing grants an absorb equal to 35% of the healing."),
   },
 }
@@ -124,7 +124,14 @@ function Mastery.Lines(classKey, tag, points)
   local def = Mastery.Definition(classKey, tag)
   if not def then return {} end
   points = points or 0
-  local out = { { text = string.format("Spec abilities gain %d%% damage and healing.", points * Mastery.SPEC_BONUS_PCT), active = points > 0, points = 0 } }
+  local text = string.format("Spec abilities gain %d%% damage and healing.", points * Mastery.SPEC_BONUS_PCT)
+  if classKey == "WARRIOR" and tag == "arms" then
+    text = string.format("Arms abilities and Heroic Strike gain %d%% damage and healing.", points * Mastery.SPEC_BONUS_PCT)
+  end
+  if classKey == "SHAMAN" and tag == "enhancement" then
+    text = text .. string.format(" Melee auto-attacks deal %d%% more damage.", points * Mastery.SPEC_BONUS_PCT)
+  end
+  local out = { { text = text, active = points > 0, points = 0 } }
   for _, tier in ipairs(def.tiers) do out[#out + 1] = { text = tier.text, active = points >= tier.points, points = tier.points } end
   return out
 end
@@ -136,6 +143,8 @@ function Mastery.Apply(side, allocation)
   side.mastery = { progress = {}, total = total }
   for _, it in ipairs(side.items) do
     local spec = Mastery.Spec(it.def)
+    if not spec and side.classKey == "WARRIOR" and (side.talents.arms or 0) > 0
+      and (it.def.baseKey or it.def.key) == "heroic_strike" then spec = "arms" end
     local points = spec and side.talents[spec] or 0
     it.masterySpec = spec
     if points > 0 then

@@ -41,8 +41,7 @@ ability(6013, "lesser_heal", "Lesser Heal", "holy", "Spell_Holy_LesserHeal", 1, 
   use = { cd = 4, cost = 12, resource = "mana", condition = "injured", effects = { { type = "heal", min = 10, max = 16, coef = 0.6 } } } })
 ability(6014, "renew", "Renew", "holy", "Spell_Holy_Renew", 1, 1, {
   tags = { "holy", "spell", "heal", "hot" },
-  use = { cd = 12, initialDelay = 1, cost = 15, resource = "mana", effects = { { type = "hot", key = "renew", tick = 3, coef = 0.07, duration = 12 } } },
-  triggers = { { on = "healed", effects = { { type = "bank", key = "holy_grace", fraction = 0.2, cap = { flat = 30, healing = 0.7 } } } } } })
+  use = { cd = 12, initialDelay = 1, cost = 15, resource = "mana", effects = { { type = "hot", key = "renew", tick = 4, coef = 0.07, duration = 12 } } } })
 ability(6015, "heal_priest", "Heal", "holy", "Spell_Holy_Heal", 2, 2, {
   tags = { "holy", "spell", "heal" },
   use = { cd = 6, cost = 20, resource = "mana", condition = "injured", effects = { { type = "heal", min = 20, max = 28, coef = 0.8 }, { type = "tickHots" } } } })
@@ -54,7 +53,7 @@ ability(6017, "greater_heal", "Greater Heal", "holy", "Spell_Holy_GreaterHeal", 
   use = { cd = 8, cost = 30, resource = "mana", condition = "below50", effects = { { type = "heal", min = 30, max = 42, coef = 1.0 }, { type = "tickHots" } } } })
 ability(6018, "holy_fire", "Holy Fire", "holy", "Spell_Holy_SearingLight", 1, 1, {
   tags = { "holy", "spell", "dot" },
-  use = { cd = 8, cost = 18, resource = "mana", effects = { { type = "damage", min = 10, max = 15, coef = 0.45, school = "holy", spendBank = "holy_grace", bankLabel = "stored healing" }, { type = "dot", key = "holy_fire", tick = 2, coef = 0.04, duration = 8, school = "holy" } } } })
+  use = { cd = 8, cost = 18, resource = "mana", effects = { { type = "damage", min = 10, max = 15, coef = 0.45, school = "holy" }, { type = "dot", key = "holy_fire", tick = 2, coef = 0.04, duration = 8, school = "holy" } } } })
 ability(6019, "holy_nova", "Holy Nova", "holy", "Spell_Holy_HolyNova", 3, 4, {
   tags = { "holy", "spell", "heal" }, shape = S.L,
   use = { cd = 9, cost = 25, resource = "mana", effects = { { type = "damage", min = 10, max = 14, coef = 0.2, school = "holy" }, { type = "heal", min = 10, max = 14, coef = 0.3 }, { type = "tickHots" } } } })
@@ -62,8 +61,7 @@ ability(6020, "prayer_of_healing", "Prayer of Healing", "holy", "Spell_Holy_Pray
   tags = { "holy", "spell", "heal" }, shape = S.sq,
   use = { cd = 14, cost = 30, resource = "mana", condition = "below50", effects = { { type = "heal", min = 24, max = 34, coef = 0.8 }, { type = "hot", key = "prayer_of_healing", tick = 2, coef = 0.05, duration = 8 } } } })
 ability(6021, "spiritual_healing", "Spiritual Healing", "holy", "Spell_Nature_MoonGlow", 3, 4, {
-  stats = { healing = 14 },
-  triggers = { { on = "healed", everyAmount = 40, effects = { { type = "cdr", target = "all", match = { key = "holy_fire" }, amount = 1, clampReady = true } } } } })
+  stats = { healing = 14, healPct = 8 } })
 ability(6022, "inspiration", "Inspiration", "holy", "Spell_Holy_LayOnHands", 2, 2, {
   triggers = { { on = "anyCrit", healing = true, match = { tag = "heal" }, effects = { { type = "buff", stat = "armor", value = 25, duration = 6, key = "inspiration", name = "Inspiration" }, { type = "absorb", fromEvent = 0.2 } } } } })
 ability(6023, "searing_light", "Searing Light", "holy", "Spell_Holy_SearingLightPriest", 2, 2, {

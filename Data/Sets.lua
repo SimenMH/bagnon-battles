@@ -42,7 +42,7 @@ ns.RegisterSet{ key = "wrath", name = "Battlegear of Wrath",
 
 ns.RegisterSet{ key = "beastmaster", name = "Beastmaster Armor",
   bonuses = {
-    [2] = { triggers = { { on = "anyUse", match = { tag = "pet" }, icd = 2, effects = { { type = "heal", min = 0, max = 0, pctMax = 0.02 } } } }, text = "Pet abilities heal you for 2%." },
+    [2] = { triggers = { { on = "anyUse", match = { tag = "pet" }, icd = 2, effects = { { type = "heal", min = 0, max = 0, pctMax = 0.0125 } } } }, text = "Pet abilities heal you for 1.25% maximum Health." },
     [4] = { triggers = { { on = "resourceSpent", resource = "focus", everyAmount = 35, effects = { { type = "buff", stat = "petPct", value = 25, duration = 6, key = "beastmaster_4", name = "Beastmaster Armor" } } } }, text = "Every 35 Focus spent grants 25% pet damage for 6s." },
   } }
 ns.RegisterSet{ key = "giantstalker", name = "Giantstalker Armor",
@@ -72,7 +72,7 @@ ns.RegisterSet{ key = "cryptstalker", name = "Cryptstalker Armor",
   } }
 ns.RegisterSet{ key = "dreamwalker", name = "Dreamwalker Raiment",
   bonuses = {
-    [2] = { triggers = { { on = "anyCrit", healing = false, match = { tag = "feral" }, effects = { { type = "heal", pctMax = 0.03 } } } }, text = "Feral crits heal 3% maximum health." },
+    [2] = { triggers = { { on = "anyCrit", healing = false, match = { tag = "feral" }, effects = { { type = "heal", pctMax = 0.02 } } } }, text = "Feral crits heal 2% maximum Health." },
     [4] = { mods = { match = { tag = "feral" }, dmgPct = 30 }, text = "Feral abilities deal 30% more damage." },
     [6] = { triggers = { { on = "anyCrit", healing = false, match = { tag = "feral" }, effects = { { type = "resource", resource = "energy", amount = 40 }, { type = "resource", resource = "rage", amount = 20 }, { type = "cdr", target = "all", match = { tag = "feral" }, amount = 2 } } } }, text = "Feral crits restore 40 Energy and 20 Rage. Advance all Feral abilities by 2s." },
   } }

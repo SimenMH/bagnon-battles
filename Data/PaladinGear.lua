@@ -11,7 +11,7 @@ H.Armor{ id = 5409, key = "paladin_stockade_pauldrons", name = "Stockade Pauldro
 H.Armor{ id = 5410, key = "paladin_ornate_mithril_gloves", name = "Ornate Mithril Gloves", icon = I("inv_gauntlets_31"), quality = 2, cost = 5, minRound = 2, classes = PALADIN, armorType = "plate", slot = "hands", stats = { armor = 12, ap = 22, crit = 3 } }
 H.Armor{ id = 5411, key = "paladin_peacekeeper_boots", name = "Peacekeeper Boots", icon = I("inv_boots_plate_03"), quality = 3, cost = 7, minRound = 4, classes = PALADIN, armorType = "plate", slot = "feet", stats = { armor = 22, hp = 45, sp = 14, healing = 14 } }
 H.Jewel{ id = 5412, key = "libram_of_divinity", name = "Libram of Divinity", icon = I("inv_relics_libramofhope"), kind = "relic", quality = 3, cost = 7, minRound = 4, classes = PALADIN, stats = { healing = 12 },
-  triggers = { { on = "healed", match = { key = "flash_of_light" }, everyAmount = 20, effects = { { type = "bank", key = "paladin_holy", amount = 8 } } } } }
+  triggers = { { on = "battleStart", effects = { { type = "buff", target = "all", match = { key = "flash_of_light" }, stat = "healPct", value = 12, duration = 90, key = "libram_of_divinity_healing", name = "Libram of Divinity" } } } } }
 H.Jewel{ id = 5413, key = "libram_of_hope", name = "Libram of Hope", icon = I("inv_relics_libramofhope"), kind = "relic", quality = 3, cost = 7, minRound = 4, classes = PALADIN, stats = { regen = 2 },
   triggers = { { on = "anyUse", match = { key = "judgement" }, effects = { { type = "resource", resource = "mana", amount = 6 } } } } }
 H.Jewel{ id = 5414, key = "libram_of_truth", name = "Libram of Truth", icon = I("inv_relics_libramoftruth"), kind = "relic", quality = 3, cost = 7, minRound = 5, classes = PALADIN, stats = { armor = 16 },
@@ -19,7 +19,7 @@ H.Jewel{ id = 5414, key = "libram_of_truth", name = "Libram of Truth", icon = I(
 H.Jewel{ id = 5415, key = "libram_of_grace", name = "Libram of Grace", icon = I("inv_relics_libramofgrace"), kind = "relic", quality = 4, cost = 10, minRound = 8, classes = PALADIN, stats = { healing = 24 },
   triggers = { { on = "anyUse", match = { key = "cleanse_paladin" }, effects = { { type = "heal", min = 12, max = 18, coef = 0.45 } } } } }
 H.Jewel{ id = 5416, key = "libram_of_light", name = "Libram of Light", icon = I("inv_relics_libramofgrace"), kind = "relic", quality = 4, cost = 11, minRound = 10, classes = PALADIN, stats = { sp = 16 },
-  triggers = { { on = "healed", everyAmount = 40, effects = { { type = "cdr", target = "all", match = { key = "holy_shock" }, amount = 2 } } } } }
+  triggers = { { on = "battleStart", effects = { { type = "buff", target = "all", match = { key = "flash_of_light" }, stat = "healPct", value = 20, duration = 90, key = "libram_of_light_healing", name = "Libram of Light" } } } } }
 H.Jewel{ id = 5420, key = "paladin_pendant_of_the_fallen_dragon", name = "Pendant of the Fallen Dragon", icon = I("inv_jewelry_necklace_12"), kind = "neck", quality = 4, cost = 10, minRound = 8, classes = PALADIN, stats = { hp = 60, healing = 32, regen = 2 } }
 
 local SHARED_GEAR = {
@@ -67,7 +67,7 @@ ns.RegisterSet{ key = "judgement_armor", name = "Judgement Armor", bonuses = {
   [6] = { double = { tag = "judgement" }, stats = { crit = 15, critDamage = 50 }, text = "Judgement hits twice. Gain 15% Critical Strike and 50% Critical Strike Damage." },
 } }
 ns.RegisterSet{ key = "redemption", name = "Redemption Armor", bonuses = {
-  [2] = { triggers = { { on = "healed", effects = { { type = "bank", key = "paladin_holy", fraction = 0.2 } } } }, text = "Store 20% of effective healing for Holy Shock." },
+  [2] = { triggers = { { on = "healed", effects = { { type = "bank", key = "paladin_holy", fraction = 0.1 } } } }, text = "Store 10% of effective healing for Holy Shock." },
   [4] = { triggers = { { on = "anyCrit", healing = true, effects = { { type = "cdr", target = "all", match = { key = "holy_shock" }, amount = 2 }, { type = "resource", resource = "mana", amount = 10 } } } }, text = "Healing crits advance Holy Shock by 2s and restore 10 Mana." },
   [6] = { flags = { "revive" }, triggers = { { on = "anyUse", match = { key = "holy_shock" }, effects = { { type = "cast", key = "holy_light" } } } }, text = "Holy Shock casts Holy Light for free. Once per battle, return to full health instead of dying." },
 } }

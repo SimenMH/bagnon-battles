@@ -51,7 +51,7 @@ ns.RegisterSet{ key = "nemesis", name = "Nemesis Raiment", bonuses = {
   [6] = { double = { tag = "destruction" }, free = { tag = "destruction" }, text = "Destruction spells cast twice and cost no Mana." },
 } }
 ns.RegisterSet{ key = "plagueheart", name = "Plagueheart Raiment", bonuses = {
-  [2] = { triggers = { { on = "dotTick", match = { tag = "affliction" }, every = 6, effects = { { type = "heal", pctMax = 0.03, noCrit = true } } } }, text = "Every 6 Affliction ticks heal 3% maximum Health." },
+  [2] = { triggers = { { on = "dotTick", match = { tag = "affliction" }, every = 6, effects = { { type = "heal", pctMax = 0.02, noCrit = true } } } }, text = "Every 6 Affliction ticks heal 2% maximum Health." },
   [4] = { triggers = { { on = "healed", icd = 1, effects = { { type = "cdr", target = "all", match = { tag = "affliction" }, amount = 0.5, clampReady = true } } } }, text = "Effective healing reduces Affliction cooldowns by 0.5s, once per second." },
   [6] = { double = { tag = "affliction" }, flags = { "revive" }, stats = { healing = 50 }, text = "Affliction spells cast twice. Gain 50 Healing Power and return to full Health once instead of dying." },
 } }

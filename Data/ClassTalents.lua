@@ -48,7 +48,8 @@ trees.PRIEST = {
   holy = tree("Holy", "Spell_Holy_SearingLight",
     tier(2, "Holy abilities gain 8% Critical Strike.", { mods = { crit = 8 } }),
     tier(5, "Holy healing crits restore 6 Mana.", { triggers = { { on = "anyCrit", healing = true, match = { tag = "holy" }, effects = { { type = "resource", resource = "mana", amount = 6 } } } } }),
-    tier(8, "Every 40 effective Holy healing advances Holy Fire by 2s.", { triggers = { { on = "healed", match = { tag = "holy" }, everyAmount = 40, effects = { { type = "cdr", target = "all", match = { key = "holy_fire" }, amount = 2, clampReady = true } } } } })),
+    tier(8, "Every 60 Mana spent on Holy healing spells grants a shield for 20 damage (+15% Healing Power).", { triggers = { { on = "resourceSpent", resource = "mana", match = { kind = "ability", tag = "holy", anyTag = { "heal" } }, everyAmount = 60,
+      effects = { { type = "absorb", amount = 20, coef = 0.15 } } } } })),
   shadow = tree("Shadow", "Spell_Shadow_ShadowWordPain",
     tier(2, "Shadow abilities cost 10% less Mana.", { mods = { costPct = -10 } }),
     tier(5, "Every 3 Shadow damage ticks restore 4 Mana.", { triggers = { { on = "dotTick", match = { tag = "shadow" }, every = 3, effects = { { type = "resource", resource = "mana", amount = 4 } } } } }),
@@ -66,8 +67,8 @@ trees.SHAMAN = {
     tier(8, "Every 30 Mana spent on shocks advances your melee auto-attacks by 1s.", { triggers = { { on = "resourceSpent", resource = "mana", match = { tag = "shock" }, everyAmount = 30, effects = { { type = "cdr", target = "all", match = { tag = "melee", anyTag = { "autoattack" } }, amount = 1, clampReady = true } } } } })),
   restoration = tree("Restoration", "Spell_Nature_MagicImmunity",
     tier(2, "Restoration abilities cost 10% less Mana.", { mods = { costPct = -10 } }),
-    tier(5, "Every 40 effective Restoration healing restores 3 Mana.", { triggers = { { on = "healed", match = { tag = "restoration" }, everyAmount = 40, effects = { { type = "resource", resource = "mana", amount = 3 } } } } }),
-    tier(8, "Every 40 effective Restoration healing grants 7 absorb and advances damaging totems by 1s.", { triggers = { { on = "healed", match = { tag = "restoration" }, everyAmount = 40, effects = { { type = "absorb", amount = 7 }, { type = "cdr", target = "all", match = { tag = "totem", damaging = true }, amount = 1, clampReady = true } } } } })),
+    tier(5, "Every 40 Mana spent on Restoration healing restores 8 Mana.", { triggers = { { on = "resourceSpent", resource = "mana", match = { kind = "ability", tag = "restoration", anyTag = { "heal" } }, everyAmount = 40, effects = { { type = "resource", resource = "mana", amount = 8 } } } } }),
+    tier(8, "Every 80 effective Restoration healing grants 7 absorb and advances damaging totems by 1s.", { triggers = { { on = "healed", match = { tag = "restoration" }, everyAmount = 80, effects = { { type = "absorb", amount = 7 }, { type = "cdr", target = "all", match = { tag = "totem", damaging = true }, amount = 1, clampReady = true } } } } })),
 }
 
 trees.MAGE = {

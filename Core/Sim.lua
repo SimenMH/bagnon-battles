@@ -9,7 +9,7 @@ Sim.MAX_TIME = 90
 Sim.FATIGUE_START = 45
 Sim.BASE_CRIT = 5
 Sim.BASE_DODGE = 5
-Sim.MAX_EVENTS = 32000
+Sim.MAX_EVENTS = 64000
 Sim.MAX_CHAIN_PROCS = 128
 Sim.RAGE_PER_DAMAGE_DEALT = 0.5
 Sim.RAGE_PER_DAMAGE_TAKEN = 0.2
@@ -44,7 +44,9 @@ end
 
 function Sim.RageDamageScale(side)
   if side.provides and side.provides.bearform then
-    return math.min(0.65, math.sqrt(ns.Economy.BaseHealth(1) / ns.Economy.BaseHealth(side.round or 1)))
+    local curve = ns.Economy.RAGE_REFERENCE_HEALTH
+    local round = Util.Clamp(side.round or 1, 1, #curve)
+    return math.min(0.65, math.sqrt(curve[1] / curve[round]))
   end
   return 1
 end
@@ -140,12 +142,22 @@ end
 local function ownerStat(side, stat)
   if (stat == "block" or stat == "blockChance") and not (side.shield and side.shield.equipped) then return 0 end
   local v = side.stats[stat] or 0
+  local strongest
   for i = 1, #side.buffs do
     local b = side.buffs[i]
     if b.stat == stat and not b.itemMatch and not (stat == "dr" and (b.damageSchool or b.rangedOnly)) then
       local value = b.value
       if b.missingHealth then value = value * max(0, 1 - side.hp / side.hpMax) end
-      v = v + value
+      if b.exclusiveGroup and value < 0 then
+        strongest = strongest or {}
+        local previous = strongest[b.exclusiveGroup] or 0
+        if value < previous then
+          v = v + value - previous
+          strongest[b.exclusiveGroup] = value
+        end
+      else
+        v = v + value
+      end
     end
   end
   return v
@@ -744,7 +756,7 @@ local function finishChain(sim, owner)
         end
       else
         for _, effect in ipairs(entry.weapon.def.use.effects) do
-          applyEffect(sim, entry.side, entry.enemy, entry.weapon, effect, entry.t, { extraAttack = true, autoAttack = true })
+          applyEffect(sim, entry.side, entry.enemy, entry.weapon, effect, entry.t, { extraAttack = true, autoAttack = true, bonusAttackPowerPct = entry.bonusAttackPowerPct })
         end
       end
       sim.trace = previous
@@ -889,13 +901,13 @@ local function masteryEvent(sim, side, enemy, event, it, t, ctx)
     if spec == "feral" and (points.feral or 0) >= 5 then
       local finisher = it.def.tagSet.finisher and (ctx.points or 0) > 0
       local bearStrike = it.def.tagSet.melee and it.def.use and it.def.use.resource == "rage"
-      if finisher then applyHealing(sim, side, it, side.hpMax * 0.03, t) end
+      if finisher then applyHealing(sim, side, it, side.hpMax * 0.02, t) end
       if bearStrike and (ctx.spent or 0) > 0 then
         side.masteryCounters = side.masteryCounters or {}
         local paid = (side.masteryCounters.feralRage or 0) + ctx.spent
         local times = floor((paid + 1e-9) / 30)
         side.masteryCounters.feralRage = max(0, paid - times * 30)
-        if times > 0 then applyHealing(sim, side, it, side.hpMax * 0.03 * times, t) end
+        if times > 0 then applyHealing(sim, side, it, side.hpMax * 0.02 * times, t) end
       end
     end
   elseif event == "healed" and spec == "resto" and ctx.amount > 0 then
@@ -945,6 +957,9 @@ end
 
 local function damageMultiplier(side, it, e)
   local mult = 1 + (itemStat(side, it, "dmgPct") + it.mods.dmgPct) / 100
+  if side.classKey == "SHAMAN" and e.weaponSelf and it.def.kind == "weapon" and not ns.IsRangedWeapon(it.def) then
+    mult = mult + (side.talents.enhancement or 0) * ns.Mastery.SPEC_BONUS_PCT / 100
+  end
   local range = attackRange(it, e)
   if range == "pet" then mult = mult + itemStat(side, it, "petPct") / 100 end
   if (e.school or "physical") == "physical" then
@@ -956,14 +971,27 @@ local function damageMultiplier(side, it, e)
   return max(0, mult)
 end
 
+local function healingPenalty(side, it)
+  local reduction = min(0, side.stats.healPct or 0) + min(0, it and it.mods.healPct or 0)
+  for _, buff in ipairs(side.buffs) do
+    if buff.stat == "healPct" and buff.value < 0 and (not buff.itemMatch or it and Util.MatchDef(it.def, buff.itemMatch)
+      and (not buff.itemUids or buff.itemUids[it.uid])) then
+      local value = buff.value
+      if buff.missingHealth then value = value * max(0, 1 - side.hp / side.hpMax) end
+      reduction = reduction + value
+    end
+  end
+  return reduction
+end
+
 local function healingMultiplier(side, it)
-  return max(0, 1 + (itemStat(side, it, "healPct") + it.mods.healPct) / 100)
+  return max(0, 1 + (itemStat(side, it, "healPct") + it.mods.healPct - healingPenalty(side, it)) / 100)
 end
 
 applyHealing = traced(function(sim, side, it, amount, t, options)
   options = options or {}
   if side.hp <= 0 then return 0 end
-  amount = max(0, Util.Round(amount))
+  amount = max(0, Util.Round(amount * max(0, 1 + healingPenalty(side, it) / 100)))
   local healed = min(amount, max(0, side.hpMax - side.hp))
   side.hp = side.hp + healed
   if side.hp >= side.hpMax * 0.4 then side.below40Fired = false end
@@ -1031,7 +1059,8 @@ end
 
 local function stackIncrement(effect, ctx)
   if effect.stacksFromEvent then
-    local amount = max(0, ctx and ctx.amount or 0)
+    local amount = effect.fromCriticalDamage and (ctx and ctx.criticalDamage or 0) or (ctx and ctx.amount or 0)
+    amount = max(0, amount)
     if amount <= 0 then return 0 end
     return max(1, floor(amount * effect.stacksFromEvent))
   end
@@ -1121,7 +1150,12 @@ local dealDamage = traced(function(sim, side, enemy, it, e, t, ctx)
     end
     if stored <= 0 and not e.min and not e.weapon and not e.weaponSelf then return 0 end
   end
-  local stat = itemStat(side, it, e.powerStat or (school == "physical" and "ap" or "sp"))
+  local powerStat = e.powerStat or (school == "physical" and "ap" or "sp")
+  local stat = itemStat(side, it, powerStat)
+  if powerStat == "ap" and e.weaponSelf and it.def.kind == "weapon" and it.def.tagSet.melee
+    and autoAttack and ctx and ctx.extraAttack and ctx.bonusAttackPowerPct then
+    stat = stat * (1 + ctx.bonusAttackPowerPct / 100)
+  end
   local amount = (base + (e.coef or 0) * stat) * damageMultiplier(side, it, e) + it.mods.flat
   if e.weaponSelf and it.def.kind == "weapon" and it.def.tagSet.melee and side.provides.dualwield and side.weaponMelee ~= it then amount = amount * 0.5 end
   if e.blockScale then amount = amount + e.blockScale * ownerStat(side, "block") end
@@ -1150,7 +1184,12 @@ local dealDamage = traced(function(sim, side, enemy, it, e, t, ctx)
   if e.critIf and conditionMet(e.critIf, side, enemy, t) then critChance = 100 end
   local crit = not e.noCrit and rng:Chance(critChance)
   if crit then amount = amount * (school == "physical" and 2 or 1.5) * max(0, 1 + (itemStat(side, it, "critDamage") + (it.masteryCritDamage or 0)) / 100) end
-  if e.consumeDots then amount = amount + consumeDots(sim, side, enemy, e.consumeDots, t) end
+  local criticalShare = crit and 1 or 0
+  if e.consumeDots then
+    local direct = amount
+    amount = amount + consumeDots(sim, side, enemy, e.consumeDots, t)
+    criticalShare = crit and amount > 0 and direct / amount or 0
+  end
 
   local armorPrevented = 0
   if school == "physical" then
@@ -1231,7 +1270,7 @@ local dealDamage = traced(function(sim, side, enemy, it, e, t, ctx)
     end
   end
 
-  local hitContext = { source = it, amount = amount, crit = crit, autoAttack = autoAttack, healing = false,
+  local hitContext = { source = it, amount = amount, criticalDamage = amount * criticalShare, crit = crit, autoAttack = autoAttack, healing = false,
     activationId = ctx.activationId, caster = ctx.caster }
   if not e.noOwnTriggers then
     runTriggers(sim, side, enemy, it, "hit", t, hitContext)
@@ -1261,16 +1300,7 @@ end)
 
 local heal = traced(function(sim, side, it, e, t, ctx)
   if e.fixedFraction then
-    local reduction = min(0, side.stats.healPct or 0) + min(0, it and it.mods.healPct or 0)
-    for _, buff in ipairs(side.buffs) do
-      if buff.stat == "healPct" and buff.value < 0 and (not buff.itemMatch or it and Util.MatchDef(it.def, buff.itemMatch)
-        and (not buff.itemUids or buff.itemUids[it.uid])) then
-        local value = buff.value
-        if buff.missingHealth then value = value * max(0, 1 - side.hp / side.hpMax) end
-        reduction = reduction + value
-      end
-    end
-    return applyHealing(sim, side, it, max(0, ctx and ctx.amount or 0) * (e.fromEvent or 0) * max(0, 1 + reduction / 100), t)
+    return applyHealing(sim, side, it, max(0, ctx and ctx.amount or 0) * (e.fromEvent or 0), t)
   end
   local base = 0
   if e.min then base = sim.rng:Range(e.min, e.max or e.min) end
@@ -1302,7 +1332,7 @@ local function addStatus(sim, holder, srcSide, it, e, t, kind, ctx)
   local perTick
   if kind == "dot" then
     local school = e.school or "physical"
-    local stat = school == "physical" and itemStat(srcSide, it, "ap") or itemStat(srcSide, it, "sp")
+    local stat = itemStat(srcSide, it, e.powerStat or (school == "physical" and "ap" or "sp"))
     perTick = ((e.tick or 0) + (e.coef or 0) * stat) * damageMultiplier(srcSide, it, e)
   else
     perTick = ((e.tick or 0) + (e.coef or 0) * itemStat(srcSide, it, "healing")) * healingMultiplier(srcSide, it)
@@ -1383,6 +1413,7 @@ local function addBuff(sim, holder, srcSide, it, e, t, negative, ctx)
       b.remaining = e.duration
       b.missingHealth = e.missingHealth
       b.damageSchool, b.rangedOnly = e.damageSchool, e.rangedOnly
+      b.exclusiveGroup = negative and e.exclusiveGroup or nil
       b.itemMatch, b.itemUids = itemMatch, itemUids
       b.charges, b.chargeVersion = e.charges, (b.chargeVersion or 0) + 1
       b.kind, b.match, b.double, b.free = negative and "debuff" or "buff", e.match, e.double, e.free
@@ -1404,7 +1435,7 @@ local function addBuff(sim, holder, srcSide, it, e, t, negative, ctx)
     kind = negative and "debuff" or "buff", charges = e.charges, chargeVersion = 1,
     icon = it and it.def.icon, name = e.name or (it and it.def.name),
     free = e.free, match = e.match, double = e.double, missingHealth = e.missingHealth, itemMatch = itemMatch, itemUids = itemUids,
-    damageSchool = e.damageSchool, rangedOnly = e.rangedOnly }
+    damageSchool = e.damageSchool, rangedOnly = e.rangedOnly, exclusiveGroup = negative and e.exclusiveGroup or nil }
   holder.buffs[#holder.buffs + 1] = b
   pushEvent(sim, { t = t, side = srcSide.id, uid = it and it.uid, type = negative and "debuff" or "buff", key = key, stat = e.stat, value = b.value, target = holder.id,
     duration = e.duration, icon = b.icon, name = b.name, stacks = stacks, charges = b.charges, damageSchool = e.damageSchool, rangedOnly = e.rangedOnly })
@@ -1564,7 +1595,7 @@ applyEffect = traced(function(sim, side, enemy, it, e, t, ctx)
     local chainOwner = beginChain(sim)
     if side.stunUntil <= t and not ownerOccupied(side) and side.weaponMelee and side.weaponMelee.enabled and not side.weaponMelee.statStick then
       local pending = sim.chain.pending
-      pending[#pending + 1] = { side = side, enemy = enemy, weapon = side.weaponMelee, count = e.count or 1, t = t, parentTrace = sim.trace }
+      pending[#pending + 1] = { side = side, enemy = enemy, weapon = side.weaponMelee, count = e.count or 1, bonusAttackPowerPct = e.bonusAttackPowerPct, t = t, parentTrace = sim.trace }
     end
     finishChain(sim, chainOwner)
   elseif kind == "cast" then
@@ -1733,6 +1764,41 @@ local function matchesEventSource(source, filter, autoAttack)
   return Util.MatchDef(def, filter)
 end
 
+local function cooldownWouldChange(side, target, effect, t)
+  if side.stunUntil > t then return false end
+  local after = target.cd - effect.amount * cooldownSpeed(side, target)
+  if effect.clampReady or ownerOccupied(side) and target.def.kind ~= "pet" then after = max(0, after) end
+  return after ~= target.cd
+end
+
+local function emptyResourceTrigger(side, trigger)
+  if trigger.chance or #trigger.effects == 0 then return false end
+  for _, effect in ipairs(trigger.effects) do
+    if effect.type ~= "resource" or side.res[effect.resource] then return false end
+  end
+  return true
+end
+
+local function emptyCooldownTrigger(side, item, trigger, t)
+  if trigger.chance or #trigger.effects == 0 then return false end
+  for _, effect in ipairs(trigger.effects) do
+    if effect.type ~= "cdr" then return false end
+    if effect.target == "neighbors" then
+      for _, neighbor in ipairs(item.neighbors or {}) do
+        local target = side.byUid[neighbor.uid]
+        if target and target.enabled and Util.MatchDef(target.def, effect.match) and cooldownWouldChange(side, target, effect, t) then return false end
+      end
+    elseif effect.target == "all" then
+      for _, target in ipairs(side.items) do
+        if target.enabled and Util.MatchDef(target.def, effect.match) and cooldownWouldChange(side, target, effect, t) then return false end
+      end
+    elseif item and cooldownWouldChange(side, item, effect, t) then
+      return false
+    end
+  end
+  return true
+end
+
 runTriggers = function(sim, side, enemy, it, on, t, ctx)
   local chainOwner = beginChain(sim)
   local chain = sim.chain
@@ -1789,8 +1855,9 @@ runTriggers = function(sim, side, enemy, it, on, t, ctx)
             end
             if trig.icd then item.trigIcd[idx] = t + trig.icd + max(0, side.stunUntil - t) end
             chain.active[key] = true
-            for pass = 1, min(times, Sim.MAX_CHAIN_PROCS - chain.count) do
-              if chain.count >= Sim.MAX_CHAIN_PROCS then break end
+            local attempts = (emptyCooldownTrigger(side, item, trig, t) or emptyResourceTrigger(side, trig)) and 0 or min(times, Sim.MAX_CHAIN_PROCS - chain.count)
+            for pass = 1, attempts do
+              if chain.count >= Sim.MAX_CHAIN_PROCS or emptyCooldownTrigger(side, item, trig, t) or emptyResourceTrigger(side, trig) then break end
               chain.count = chain.count + 1
               local previous = sim.trace
               sim.trace = newTrace(sim, previous)

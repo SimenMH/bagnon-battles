@@ -11,18 +11,18 @@ H.Ability{ id = 2012, key = "quiver", spec = "shared", name = "Light Quiver", ic
   } }
 
 H.Weapon{ id = 1450, key = "worn_shortbow", name = "Worn Shortbow", icon = I("inv_weapon_bow_05"), quality = 1, cost = 3, weaponType = "bow", classes = HUNTER, weaponMin = 12, weaponMax = 15, speed = 2.4, noShop = true, starter = true }
-H.Weapon{ id = 1452, key = "heavy_crossbow", name = "Heavy Crossbow", icon = I("inv_weapon_crossbow_03"), quality = 2, minRound = 2, weaponType = "crossbow", classes = HUNTER, weaponMin = 18, weaponMax = 24, speed = 3.0, coef = 0.30,
+H.Weapon{ id = 1452, key = "heavy_crossbow", name = "Heavy Crossbow", icon = I("inv_weapon_crossbow_03"), quality = 2, minRound = 2, weaponType = "crossbow", classes = HUNTER, weaponMin = 18, weaponMax = 24, speed = 3.0, coef = 0.45,
   triggers = { { on = "hit", chance = 25, effects = { { type = "debuff", stat = "armor", value = 5, duration = 6, key = "heavy_bolt", name = "Heavy Crossbow", stack = true, maxStacks = 3 } } } } }
 H.Weapon{ id = 1453, key = "blackcrow", name = "Blackcrow", icon = I("inv_weapon_crossbow_04"), quality = 3, minRound = 5, weaponType = "crossbow", classes = HUNTER, weaponMin = 20, weaponMax = 26, speed = 2.6, stats = { crit = 1 },
   triggers = { { on = "hit", condition = "enemyStunned", effects = { { type = "resource", resource = "mana", amount = 5 } } } } }
 H.Weapon{ id = 1454, key = "carapace_spine_crossbow", name = "Carapace Spine Crossbow", icon = I("inv_weapon_crossbow_04"), quality = 3, minRound = 6, weaponType = "crossbow", classes = HUNTER, weaponMin = 22, weaponMax = 29, speed = 3.0, stats = { ap = 6 }, tags = { "poison" },
   triggers = { { on = "hit", chance = 25, effects = { { type = "dot", key = "carapace_venom", school = "nature", tick = 3, coef = 0.04, duration = 6 } } } } }
-H.Weapon{ id = 1455, key = "dwarven_hand_cannon", name = "Dwarven Hand Cannon", icon = I("inv_weapon_rifle_09"), quality = 3, minRound = 7, weaponType = "gun", classes = HUNTER, weaponMin = 23, weaponMax = 30, speed = 3.2, coef = 0.30,
+H.Weapon{ id = 1455, key = "dwarven_hand_cannon", name = "Dwarven Hand Cannon", icon = I("inv_weapon_rifle_09"), quality = 3, minRound = 7, weaponType = "gun", classes = HUNTER, weaponMin = 23, weaponMax = 30, speed = 3.2, coef = 0.48,
   triggers = { { on = "hit", chance = 15, icd = 4, effects = { { type = "stun", duration = 0.5 } } } } }
 H.Weapon{ id = 1456, key = "rhokdelar", name = "Rhok'delar, Longbow of the Ancient Keepers", icon = I("inv_weapon_bow_01"), quality = 4, minRound = 11, weaponType = "bow", classes = HUNTER, weaponMin = 28, weaponMax = 36, speed = 2.9, stats = { crit = 2, ap = 8 },
   triggers = { { on = "crit", effects = { { type = "cdr", target = "all", match = { tag = "shot" }, amount = 1.0 } } } } }
 H.Weapon{ id = 1457, key = "ashjrethul", name = "Ashjre'thul, Crossbow of Smiting", icon = I("inv_weapon_crossbow_09"), quality = 4, minRound = 13, weaponType = "crossbow", classes = HUNTER, weaponMin = 30, weaponMax = 38, speed = 3.2, stats = { ap = 10 },
-  use = { cd = 3.2, effects = { { type = "damage", weaponSelf = true, coef = 0.30, school = "physical", ranged = true, critIf = "enemyStunned" } } } }
+  use = { cd = 3.2, effects = { { type = "damage", weaponSelf = true, coef = 0.48, school = "physical", ranged = true, critIf = "enemyStunned" } } } }
 H.Weapon{ id = 1458, key = "core_marksman_rifle", name = "Core Marksman Rifle", icon = I("inv_weapon_rifle_05"), quality = 4, minRound = 12, weaponType = "gun", classes = HUNTER, weaponMin = 26, weaponMax = 34, speed = 2.8, stats = { crit = 3 },
   triggers = { { on = "crit", effects = { { type = "damage", min = 10, max = 14, school = "fire", noDodge = true } } } } }
 
@@ -52,7 +52,7 @@ H.Ability{ id = 1404, key = "concussive_shot", spec = "mm", name = "Concussive S
 H.Ability{ id = 1405, key = "scatter_shot", spec = "mm", name = "Scatter Shot", icon = I("Ability_GolemStormBolt"), quality = 3, minRound = 5, classes = HUNTER, shape = S.v2, tags = { "surv", "mm", "shot", "ranged" },
   use = { cd = 20, cost = 15, resource = "mana", requires = "ranged", effects = { { type = "damage", weapon = true, weaponPct = 0.5, ranged = true, school = "physical", coef = 0.1 }, { type = "stun", duration = 2.0 } } } }
 H.Ability{ id = 1406, key = "rapid_fire", spec = "mm", name = "Rapid Fire", icon = I("Ability_Hunter_RunningShot"), quality = 4, cost = 10, minRound = 7, classes = HUNTER, shape = S.v2, tags = { "mm" },
-  use = { cd = 25, cost = 20, resource = "mana", effects = { { type = "buff", target = "all", match = { tag = "ranged" }, stat = "haste", value = 50, duration = 8, key = "rapid_fire", name = "Rapid Fire" } } } }
+  use = { cd = 25, initialDelay = 4, cost = 20, resource = "mana", effects = { { type = "buff", target = "all", match = { tag = "ranged" }, stat = "haste", value = 50, duration = 8, key = "rapid_fire", name = "Rapid Fire" } } } }
 H.Ability{ id = 1407, key = "hunters_mark", spec = "mm", name = "Hunter's Mark", icon = I("Ability_Hunter_SniperShot"), quality = 1, classes = HUNTER, shape = S.v2, tags = { "mm" },
   triggers = { { on = "battleStart", effects = { { type = "buff", stat = "rangedPct", value = 10, duration = 120, name = "Hunter's Mark" } } }, { on = "regularHit", match = { anyWeaponType = RANGED }, effects = { { type = "debuff", stat = "armor", value = 4, duration = 12, stack = true, maxStacks = 5, key = "hunters_mark", name = "Hunter's Mark" } } } } }
 H.Ability{ id = 1409, key = "volley", spec = "mm", name = "Volley", icon = I("Ability_Marksmanship"), quality = 2, minRound = 4, classes = HUNTER, shape = S.sq, tags = { "mm", "ranged", "arcane", "dot" },
@@ -136,7 +136,7 @@ H.Ability{ id = 1442, key = "mortal_shots", spec = "mm", name = "Mortal Shots", 
 H.Ability{ id = 1462, key = "feed_pet", spec = "shared", name = "Feed Pet", icon = I("Ability_Hunter_BeastTraining"), quality = 1, classes = HUNTER, shape = S.v2, tags = { "bm", "pet" },
   use = { cd = 10, requires = "pet", effects = { { type = "resource", resource = "focus", amount = 20 } } } }
 H.Ability{ id = 1463, key = "spirit_bond", spec = "bm", name = "Spirit Bond", icon = I("classic_ability_druid_demoralizingroar"), quality = 2, minRound = 3, classes = HUNTER, shape = S.v2, tags = { "bm" },
-  triggers = { { on = "anyHit", match = { kind = "pet" }, effects = { { type = "heal", min = 0, max = 0, pctMax = 0.02 } } } } }
+  triggers = { { on = "anyHit", match = { kind = "pet" }, effects = { { type = "heal", min = 0, max = 0, pctMax = 0.0125 } } } } }
 H.Ability{ id = 1464, key = "entrapment", spec = "surv", name = "Entrapment", icon = I("Spell_Nature_StrangleVines"), quality = 2, minRound = 3, classes = HUNTER, shape = S.v2, tags = { "surv" },
   triggers = { { on = "anyUse", match = { tag = "trap" }, every = 2, effects = { { type = "stun", duration = 1.0 } } } } }
 H.Ability{ id = 1465, key = "surefooted", spec = "surv", name = "Surefooted", icon = I("Ability_Kick"), quality = 3, minRound = 5, classes = HUNTER, shape = S.v2, tags = { "surv" },

@@ -12,7 +12,7 @@ local variants = {
       { on = "dotTick", every = 4, effects = { { type = "heal", pctMax = 0.02, noCrit = true } } },
     } },
   { class = "PRIEST", key = "priest", id = 9808, stats = { sp = 65, healing = 120, mana = 60, regen = 4 },
-    triggers = { { on = "healed", everyAmount = 50, effects = { { type = "cast", target = "all", match = { tag = "spell", damaging = "direct" }, choose = "random" } } } } },
+    triggers = { { on = "healed", everyAmount = 50, effects = { { type = "cast", target = "all", match = { kind = "ability", tag = "spell", damaging = "direct" }, choose = "random" } } } } },
   { class = "DRUID", key = "druid", id = 9812, stats = { sp = 55, healing = 110, ap = 60, mana = 60, regen = 3 },
     triggers = {
       { on = "hotTick", everyAmount = 30, effects = { { type = "cdr", target = "all", match = { kind = "form" }, amount = 0.5, clampReady = true } } },

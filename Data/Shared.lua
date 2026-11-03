@@ -89,7 +89,7 @@ H.Jewel{ id = 376, key = "seal_of_wrynn", name = "Seal of Wrynn", icon = I("inv_
 H.Jewel{ id = 377, key = "blackstone_ring", name = "Blackstone Ring", icon = I("inv_jewelry_ring_17"), kind = "ring", quality = 3, cost = 7, minRound = 4, classes = PHYSICAL_JEWELRY, stats = { ap = 24, crit = 5, hp = 20 } }
 H.Jewel{ id = 378, key = "songstone_of_ironforge", name = "Songstone of Ironforge", icon = I("inv_jewelry_ring_05"), kind = "ring", quality = 3, cost = 7, minRound = 4, classes = { "HUNTER", "DRUID" }, stats = { sp = 22, healing = 16, mana = 20 } }
 H.Jewel{ id = 379, key = "ring_of_fury", name = "Ring of Fury", icon = I("inv_jewelry_ring_ahnqiraj_04"), kind = "ring", quality = 3, cost = 6, minRound = 2, classes = { "WARRIOR" }, stats = { hp = 40, ap = 12 }, tags = { "heal" },
-  triggers = { { on = "resourceSpent", resource = "rage", everyAmount = 30, effects = { { type = "heal", pctMax = 0.05 } } } } }
+  triggers = { { on = "resourceSpent", resource = "rage", everyAmount = 30, effects = { { type = "heal", pctMax = 0.015 } } } } }
 
 H.Weapon{ id = 380, key = "spiked_club", name = "Spiked Club", icon = I("inv_mace_14"), quality = 1, cost = 4, weaponType = "mace", hands = 2, classes = H.ALL_MACE, weaponMin = 6, weaponMax = 9, speed = 3.2, stats = { ap = 8, hp = 10 } }
 H.Weapon{ id = 381, key = "oak_mallet", name = "Oak Mallet", icon = I("inv_hammer_15"), quality = 2, cost = 6, minRound = 2, weaponType = "mace", hands = 2, classes = H.ALL_MACE, weaponMin = 10, weaponMax = 14, speed = 3.5, stats = { ap = 12, armor = 18, hp = 15 } }

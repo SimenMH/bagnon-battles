@@ -16,7 +16,8 @@ H.Armor{ id = 7413, key = "shaman_green_dragonscale_breastplate", name = "Green 
 H.Jewel{ id = 7414, key = "totem_of_rage", name = "Totem of Rage", icon = I("inv_relics_totemofrage"), kind = "relic", quality = 3, cost = 7, minRound = 4, classes = SHAMAN, stats = { sp = 12 },
   triggers = { { on = "anyCrit", healing = false, match = { tag = "shock" }, effects = { { type = "tickDots", match = { tag = "fire" } } } } } }
 H.Jewel{ id = 7415, key = "totem_of_rebirth", name = "Totem of Rebirth", icon = I("inv_relics_totemofrebirth"), kind = "relic", quality = 3, cost = 7, minRound = 4, classes = SHAMAN, stats = { healing = 12 },
-  triggers = { { on = "healed", everyAmount = 30, effects = { { type = "cdr", target = "all", match = { key = "lightning_shield" }, amount = 1 }, { type = "resource", resource = "mana", amount = 4 } } } } }
+  triggers = { { on = "healed", everyAmount = 30, effects = { { type = "cdr", target = "all", match = { key = "lightning_shield" }, amount = 1 } } },
+    { on = "resourceSpent", resource = "mana", match = { kind = "ability", tag = "heal" }, everyAmount = 40, effects = { { type = "resource", resource = "mana", amount = 4 } } } } }
 H.Jewel{ id = 7416, key = "totem_of_sustaining", name = "Totem of Sustaining", icon = I("inv_relics_totemoflife"), kind = "relic", quality = 3, cost = 7, minRound = 5, classes = SHAMAN, stats = { healing = 14 },
   triggers = { { on = "hotTick", match = { tag = "totem" }, every = 4, effects = { { type = "absorb", amount = 8, coef = 0.15 } } } } }
 H.Jewel{ id = 7417, key = "totem_of_life", name = "Totem of Life", icon = I("inv_relics_totemoflife"), kind = "relic", quality = 4, cost = 10, minRound = 8, classes = SHAMAN, stats = { healing = 24 },

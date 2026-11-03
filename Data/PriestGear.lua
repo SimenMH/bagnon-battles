@@ -5,11 +5,12 @@ local PRIEST = { "PRIEST" }
 
 H.Weapon{ id = 6400, key = "acolytes_staff", name = "Bent Staff", icon = I("INV_Staff_08"), quality = 1, cost = 3, classes = PRIEST, weaponType = "staff", hands = 2, weaponMin = 3, weaponMax = 5, speed = 2.9, stats = { sp = 4, healing = 4 }, noShop = true, starter = true }
 H.Weapon{ id = 6401, key = "crested_scepter", name = "Crested Scepter", icon = I("INV_Mace_03"), quality = 2, cost = 5, minRound = 2, classes = PRIEST, weaponType = "mace", weaponMin = 5, weaponMax = 8, speed = 2.2, stats = { healing = 18, mana = 15 } }
-H.Weapon{ id = 6402, key = "illusionary_rod", name = "Illusionary Rod", icon = I("INV_Staff_01"), quality = 2, cost = 6, minRound = 2, classes = PRIEST, weaponType = "staff", hands = 2, weaponMin = 6, weaponMax = 10, speed = 2.8, stats = { sp = 16, healing = 16, mana = 25 } }
+H.Weapon{ id = 6402, key = "illusionary_rod", name = "Illusionary Rod", icon = I("INV_Staff_01"), quality = 2, cost = 6, minRound = 2, classes = { "PRIEST", "DRUID" }, weaponType = "staff", hands = 2, weaponMin = 6, weaponMax = 10, speed = 2.8, stats = { sp = 16, healing = 16, mana = 25 } }
 H.Weapon{ id = 6403, key = "trindlehaven_staff", name = "Trindlehaven Staff", icon = I("INV_Staff_13"), quality = 3, cost = 9, minRound = 5, classes = PRIEST, weaponType = "staff", hands = 2, weaponMin = 10, weaponMax = 16, speed = 2.8, stats = { sp = 24, healing = 30, hp = 35, mana = 35 } }
 H.Weapon{ id = 6404, key = "hammer_of_grace", name = "Hammer of Grace", icon = I("INV_Hammer_20"), quality = 3, cost = 8, minRound = 4, classes = PRIEST, weaponType = "mace", weaponMin = 7, weaponMax = 12, speed = 2.2, stats = { healing = 36, mana = 20 } }
 H.Weapon{ id = 6405, key = "priest_benediction", name = "Benediction", icon = I("INV_Staff_41"), quality = 4, cost = 13, minRound = 9, classes = PRIEST, weaponType = "staff", hands = 2, weaponMin = 16, weaponMax = 24, speed = 3, stats = { healing = 64, crit = 6, mana = 40, hp = 45 },
-  triggers = { { on = "healed", everyAmount = 50, effects = { { type = "cdr", target = "all", match = { key = "holy_fire" }, amount = 1, clampReady = true } } } } }
+  triggers = { { on = "resourceSpent", resource = "mana", match = { kind = "ability", tag = "holy", anyTag = { "heal" } }, every = 3,
+    effects = { { type = "tickHots", match = { key = "renew" } } } } } }
 H.Weapon{ id = 6406, key = "anathema", name = "Anathema", icon = I("INV_Staff_41"), quality = 4, cost = 13, minRound = 9, classes = PRIEST, weaponType = "staff", hands = 2, weaponMin = 16, weaponMax = 24, speed = 3, stats = { sp = 58, mana = 40, hp = 45 },
   triggers = { { on = "dotTick", match = { tag = "shadow" }, everyAmount = 50, effects = { { type = "cdr", target = "all", match = { key = "mind_blast" }, amount = 1, clampReady = true } } } } }
 H.Weapon{ id = 6407, key = "lokamir_il_romathis", name = "Lok'amir il Romathis", icon = I("INV_Hammer_19"), quality = 4, cost = 14, minRound = 11, classes = PRIEST, weaponType = "mace", weaponMin = 15, weaponMax = 22, speed = 2.1, stats = { healing = 58, sp = 40, mana = 35, hp = 35 } }
@@ -28,9 +29,9 @@ H.Armor{ id = 6422, key = "truefaith_vestments", name = "Truefaith Vestments", i
 H.Armor{ id = 6423, key = "robes_of_the_exalted", name = "Robes of the Exalted", icon = I("INV_Chest_Cloth_30"), quality = 3, cost = 9, minRound = 3, classes = PRIEST, armorType = "cloth", slot = "chest", stats = { healing = 50, mana = 35, hp = 40, armor = 12 } }
 H.Armor{ id = 6424, key = "hands_of_the_exalted_herald", name = "Hands of the Exalted Herald", icon = I("INV_Gauntlets_14"), quality = 3, cost = 6, minRound = 4, classes = PRIEST, armorType = "cloth", slot = "hands", stats = { healing = 28, crit = 3, mana = 20, armor = 5 } }
 H.Armor{ id = 6425, key = "shadoweave_gloves_priest", name = "Shadoweave Gloves", icon = I("INV_Gauntlets_09"), quality = 2, cost = 5, minRound = 2, classes = PRIEST, armorType = "cloth", slot = "hands", stats = { sp = 22, hp = 15, armor = 4 } }
-H.Armor{ id = 6426, key = "shadoweave_mask_priest", name = "Shadoweave Mask", icon = I("INV_Helmet_27"), quality = 3, cost = 7, minRound = 4, classes = PRIEST, armorType = "cloth", slot = "head", stats = { sp = 30, mana = 25, hp = 30, armor = 6 } }
+H.Armor{ id = 6426, key = "shadoweave_mask_priest", name = "Shadoweave Mask", icon = I("INV_Helmet_27"), quality = 3, cost = 7, minRound = 4, classes = { "PRIEST", "DRUID" }, armorType = "cloth", slot = "head", stats = { sp = 30, mana = 25, hp = 30, armor = 6 } }
 H.Armor{ id = 6427, key = "whitemanes_chapeau", name = "Whitemane's Chapeau", icon = I("INV_Helmet_25"), quality = 2, cost = 5, minRound = 2, classes = PRIEST, armorType = "cloth", slot = "head", stats = { healing = 24, sp = 12, mana = 20, armor = 5 } }
-H.Armor{ id = 6428, key = "burial_shawl", name = "Burial Shawl", icon = I("INV_Shoulder_02"), quality = 3, cost = 7, minRound = 4, classes = PRIEST, armorType = "cloth", slot = "shoulder", stats = { healing = 24, sp = 20, mana = 20, armor = 5 } }
+H.Armor{ id = 6428, key = "burial_shawl", name = "Burial Shawl", icon = I("INV_Shoulder_02"), quality = 3, cost = 7, minRound = 4, classes = { "PRIEST", "DRUID" }, armorType = "cloth", slot = "shoulder", stats = { healing = 24, sp = 20, mana = 20, armor = 5 } }
 H.Armor{ id = 6429, key = "abyssal_cloth_pants_priest", name = "Padre's Trousers", icon = I("INV_Pants_07"), quality = 2, cost = 6, minRound = 2, classes = PRIEST, armorType = "cloth", slot = "legs", stats = { healing = 22, mana = 25, hp = 20, armor = 7 } }
 H.Armor{ id = 6430, key = "wolfrunner_shoes", name = "Wolfrunner Shoes", icon = I("INV_Boots_05"), quality = 2, cost = 5, minRound = 2, classes = PRIEST, armorType = "cloth", slot = "feet", stats = { healing = 16, sp = 12, hp = 20, armor = 4 } }
 H.Armor{ id = 6431, key = "dawnspire_cord", name = "Dawnspire Cord", icon = I("INV_Belt_11"), quality = 3, cost = 6, minRound = 4, classes = PRIEST, armorType = "cloth", slot = "waist", stats = { healing = 24, mana = 20, regen = 1, armor = 5 } }
@@ -61,8 +62,10 @@ ns.RegisterSet{ key = "devout", name = "Vestments of the Devout", bonuses = {
   [4] = { triggers = { { on = "healed", everyAmount = 35, effects = { { type = "absorb", amount = 8, coef = 0.15 } } } }, text = "Every 35 effective healing grants an absorb of 8 + 15% Healing Power." },
 } }
 ns.RegisterSet{ key = "prophecy", name = "Vestments of Prophecy", bonuses = {
-  [2] = { triggers = { { on = "healed", everyAmount = 40, effects = { { type = "resource", resource = "mana", amount = 8 } } } }, text = "Every 40 effective healing restores 8 Mana." },
-  [4] = { triggers = { { on = "healed", every = 4, effects = { { type = "cast", key = "holy_fire" } } } }, text = "Every 4 effective heals cast your Holy Fire for free." },
+  [2] = { triggers = { { on = "resourceSpent", resource = "mana", match = { kind = "ability", tag = "holy", anyTag = { "heal" } }, everyAmount = 60,
+    effects = { { type = "resource", resource = "mana", amount = 6 } } } }, text = "Every 60 Mana spent on Holy healing spells restores 6 Mana." },
+  [4] = { triggers = { { on = "resourceSpent", resource = "mana", match = { kind = "ability", tag = "holy", anyTag = { "heal" } }, every = 4,
+    effects = { { type = "cast", key = "renew", consumeCooldown = true } } } }, text = "Every 4 paid Holy healing spells cast Renew for free and start its cooldown." },
   [6] = { double = { tag = "heal" }, flags = { "revive" }, text = "Healing spells activate twice. Once per battle, return to full Health instead of dying." },
 } }
 ns.RegisterSet{ key = "transcendence", name = "Vestments of Transcendence", bonuses = {

@@ -76,7 +76,10 @@ local function resourceCapacity(base)
   for _, key in ipairs(base.classes or {}) do
     local class = ns.GetClass(key)
     local resource = class and class.resources and class.resources[base.use.resource]
-    if resource then cap = math.min(cap or resource.max, resource.max) end
+    if resource then
+      local limit = resource.rankCostCap or resource.max
+      cap = math.min(cap or limit, limit)
+    end
   end
   return cap or 100
 end

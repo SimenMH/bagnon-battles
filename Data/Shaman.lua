@@ -73,8 +73,9 @@ imbue(7022, "frostbrand_weapon", "Frostbrand Weapon", "spell_frost_frostbrand", 
   } },
 }, { minRound = 2 })
 imbue(7023, "windfury_weapon", "Windfury Weapon", "spell_nature_cyclone", 3, {
-  { on = "regularHit", match = { tag = "melee" }, chance = 20, effects = { { type = "extraAttack", count = 2 } } },
-  { on = "extraHit", match = { kind = "weapon", tag = "melee", anyTag = { "autoattack" } }, chance = 5, effects = { { type = "extraAttack", count = 2 } } },
+  { on = "regularHit", match = { tag = "melee" }, chance = 20, effects = { { type = "extraAttack", count = 2, bonusAttackPowerPct = 150 } } },
+  { on = "extraHit", match = { kind = "weapon", tag = "melee", anyTag = { "autoattack" } }, chance = 5, effects = { { type = "extraAttack", count = 2, bonusAttackPowerPct = 150 } } },
+  { on = "anyHit", match = { key = "stormstrike", kind = "ability", tag = "melee" }, chance = 20, effects = { { type = "extraAttack", count = 2, bonusAttackPowerPct = 150 } } },
 }, { minRound = 3, stats = { ap = 10 } })
 ability(7024, "stormstrike", "Stormstrike", "enhancement", "spell_holy_sealofmight", 3,
   { cd = 9, cost = 18, resource = "mana", requires = "melee", effects = {
@@ -87,7 +88,7 @@ ability(7025, "lightning_shield", "Lightning Shield", "enhancement", "spell_natu
   { cd = 12, initialDelay = 0, cost = 12, resource = "mana", effects = { { type = "buff", stat = "none", value = 0, duration = 12, key = "lightning_shield", name = "Lightning Shield" } } },
   { rankTriggers = true, triggers = {
     { on = "damaged", condition = "buff:lightning_shield", icd = 1.5, effects = { { type = "damage", min = 3, max = 5, coef = 0.2, school = "nature", spendBank = "shaman_tidal", bankLabel = "stored healing", noDodge = true, noCrit = true } } },
-    { on = "healed", effects = { { type = "bank", key = "shaman_tidal", fraction = 0.25 } } },
+    { on = "healed", effects = { { type = "bank", key = "shaman_tidal", fraction = 0.10 } } },
     { on = "resourceSpent", resource = "mana", match = { tag = "spell", anyTag = { "nature", "shock" }, damaging = "direct" }, effects = {
       { type = "debuff", stat = "none", value = 0, stack = true, uncapped = true, stacksFromEvent = 0.75, key = "shaman_lightning_charge", name = "Lightning Charge", duration = 12, rankScale = false },
     } },
@@ -112,7 +113,7 @@ passive(7031, "shaman_toughness", "Toughness", "enhancement", "spell_holy_devoti
 passive(7032, "anticipation_shaman", "Anticipation", "enhancement", "spell_nature_mirrorimage", 1, {}, { stats = { dodge = 5 }, shape = S.one, shopClasses = {} })
 
 ability(7040, "healing_wave", "Healing Wave", "restoration", "spell_nature_magicimmunity", 1,
-  { cd = 5, cost = 20, resource = "mana", condition = "injured", effects = { { type = "heal", min = 18, max = 26, coef = 0.75 }, { type = "tickHots", match = { tag = "totem" } } } },
+  { cd = 5, cost = 20, resource = "mana", condition = "injured", effects = { { type = "heal", min = 8, max = 12, pctMax = 0.05, coef = 0.4 }, { type = "tickHots", match = { tag = "totem" } } } },
   { tags = { "restoration", "spell", "nature", "heal" } })
 ability(7041, "lesser_healing_wave", "Lesser Healing Wave", "restoration", "spell_nature_healingwavelesser", 1,
   { cd = 2.8, cost = 11, resource = "mana", condition = "injured", effects = { { type = "heal", min = 8, max = 13, coef = 0.4 } } },
@@ -149,7 +150,7 @@ passive(7051, "healing_focus_shaman", "Healing Focus", "restoration", "spell_nat
 }, { minRound = 4, stats = { healing = 8 } })
 passive(7052, "totemic_mastery", "Totemic Mastery", "restoration", "spell_nature_nullward", 5, {
   { on = "hotTick", match = { tag = "totem" }, every = 4, effects = {
-    { type = "heal", pctMax = 0.02 },
+    { type = "heal", pctMax = 0.0125 },
     { type = "cdr", target = "all", match = { tag = "totem" }, amount = 0.5, clampReady = true },
   } },
 }, { minRound = 9, shopRequires = { "healing_stream_totem" }, stats = { healing = 14 } })
@@ -192,9 +193,9 @@ ability(7074, "cure_poison_shaman", "Cure Poison", "shared", "spell_nature_nulli
 passive(7075, "ancestral_knowledge", "Ancestral Knowledge", "enhancement", "spell_shadow_grimward", 1, {}, { stats = { mana = 30 }, shape = S.one, shopClasses = {} })
 
 totem(7160, "strength_of_earth_totem_active", "Strength of Earth Totem", "enhancement", "earth", "spell_nature_earthbindtotem", 1,
-  { cd = 12, initialDelay = 0, cost = 8, resource = "mana", effects = {
+  { cd = 12, initialDelay = 0, cost = 8, rankCosts = { [2] = 10, [3] = 12 }, resource = "mana", effects = {
     { type = "buff", stat = "ap", value = 30, duration = 8, key = "strength_of_earth_active", name = "Strength of Earth Totem" },
-  } }, { rankable = false })
+  } }, { rankable = true })
 totem(7161, "stoneskin_totem_active", "Stoneskin Totem", "enhancement", "earth", "spell_nature_stoneskintotem", 1,
   { cd = 14, initialDelay = 0, cost = 8, resource = "mana", effects = {
     { type = "buff", stat = "dr", value = 20, damageSchool = "physical", duration = 8, key = "stoneskin_active", name = "Stoneskin Totem" },

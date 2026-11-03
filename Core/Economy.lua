@@ -23,7 +23,9 @@ function Economy.ShopSize(round)
 end
 
 Economy.INCOME = { 13, 13, 15, 16, 18, 20, 22, 24, 26, 28, 30, 32, 33, 34, 35, 36, 36, 36, 36, 36 }
-Economy.HEALTH = { 150, 190, 230, 275, 377, 501, 643, 801, 977, 1207, 1460, 1620, 1780, 1940, 2160, 2380, 2600, 2800, 3020, 3240 }
+Economy.HEALTH = { 150, 210, 300, 425, 650, 900, 1150, 1450, 1750, 2050, 2350, 2650, 2950, 3250, 3600, 3950, 4300, 4650, 5000, 5400 }
+-- Rage generation follows power progression independently of the pacing Health buffer.
+Economy.RAGE_REFERENCE_HEALTH = { 150, 190, 230, 275, 377, 501, 643, 801, 977, 1207, 1460, 1620, 1780, 1940, 2160, 2380, 2600, 2800, 3020, 3240 }
 
 Economy.RARITY_ODDS = {
   { 90, 10, 0, 0, 0 },
@@ -243,7 +245,7 @@ local GEAR_ROLES = {
   HUNTER = { bm = { "ap" }, mm = { "ap" }, surv = { "ap", "sp" } },
   DRUID = { balance = { "sp" }, feral = { "ap" }, resto = { "healing" } },
   PALADIN = { holy = { "healing" }, protection = { "sp", "block" }, retribution = { "ap" } },
-  ROGUE = { assassination = { "ap", "sp" }, combat = { "ap" }, subtlety = { "ap" } },
+  ROGUE = { assassination = { "ap" }, combat = { "ap" }, subtlety = { "ap" } },
   PRIEST = { discipline = { "sp", "healing" }, holy = { "healing" }, shadow = { "sp" } },
   SHAMAN = { elemental = { "sp" }, enhancement = { "ap" }, restoration = { "healing" } },
   MAGE = { arcane = { "sp" }, fire = { "sp" }, frost = { "sp" } },

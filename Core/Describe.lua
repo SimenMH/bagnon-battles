@@ -64,6 +64,9 @@ local function matchNoun(filter, plural)
     for _, tag in ipairs(f.anyTag) do qualifiers[#qualifiers + 1] = SCHOOL_LABELS[tag] or tag end
     return (f.damaging == "direct" and "direct " or f.damaging and "damaging " or "") .. joinOr(qualifiers) .. (plural and " spells" or " spell")
   end
+  if SCHOOL_LABELS[f.tag] and f.anyTag and #f.anyTag == 1 and f.anyTag[1] == "heal" then
+    return SCHOOL_LABELS[f.tag] .. (plural and " healing spells" or " healing spell")
+  end
   if SCHOOL_LABELS[f.tag] then
     return (f.damaging == "direct" and "direct " or "") .. SCHOOL_LABELS[f.tag]
       .. (f.damaging and (plural and " spells" or " spell") or (plural and " abilities" or " ability"))
@@ -276,13 +279,15 @@ local function describeEffect(e, trigger, details, context)
   elseif t == "dot" then
     if e.stack and (e.uncapped or e.decayStacks or e.rampStacks) then
       local out = string.format("Deals %s %s damage per stack every sec. for %s sec.", fmtNum(e.tick), SCHOOL_LABELS[e.school or "physical"], fmtNum(e.duration))
-      if e.coef and e.coef > 0 then out = out .. string.format(" (+%s%% %s per stack)", fmtScalar(e.coef * 100), (e.school or "physical") == "physical" and "Attack Power" or "Spell Power") end
-      if e.stacksFromEvent then out = string.format("Applies 1 stack per %s damage dealt. ", fmtNum(1 / e.stacksFromEvent)) .. out end
+      if e.coef and e.coef > 0 then out = out .. string.format(" (+%s%% %s per stack)", fmtScalar(e.coef * 100), STAT_LABELS[e.powerStat or ((e.school or "physical") == "physical" and "ap" or "sp")]) end
+      if e.stacksFromEvent then out = string.format("Applies 1 stack per %s %s. ", fmtNum(1 / e.stacksFromEvent), e.fromCriticalDamage and "direct critical damage" or "damage dealt") .. out end
       if e.decayStacks then out = out .. string.format(" Loses %s stacks per tick.", fmtNum(e.decayStacks)) end
       if e.rampStacks then out = out .. string.format(" Gains %s stack%s every %s ticks.", fmtNum(e.rampStacks), e.rampStacks == 1 and "" or "s", fmtNum(e.rampEvery or 1)) end
       if not e.decayStacks then out = out .. (e.uncapped and " Stacks infinitely." or string.format(" Stacks up to %s times.", fmtNum(e.maxStacks or 5))) end
       if details then
-        if e.stacksFromEvent then out = out .. " Minimum 1 stack per damaging hit." end
+        if e.stacksFromEvent then
+          out = out .. (e.fromCriticalDamage and " Minimum 1 stack per direct critical hit. Consumed burn damage cannot create Ignite stacks." or " Minimum 1 stack per damaging hit.")
+        end
         out = out .. " Applications add stacks and refresh the duration."
         if e.preserveTicks then out = out .. " Refreshing does not delay the next tick." end
       end
@@ -298,7 +303,7 @@ local function describeEffect(e, trigger, details, context)
       return string.format("Adds %s%% of %s as %s damage over %ds.", fmtNum(e.fromEvent * 100), eventAmountLabel(trigger), SCHOOL_LABELS[e.school or "physical"], e.duration)
     end
     local out = string.format("Deals %d %s damage every second for %d seconds", e.tick, SCHOOL_LABELS[e.school or "physical"], e.duration)
-    if e.coef and e.coef > 0 then out = out .. string.format(" (+%s%% %s per tick)", fmtScalar(e.coef * 100), (e.school or "physical") == "physical" and "Attack Power" or "Spell Power") end
+    if e.coef and e.coef > 0 then out = out .. string.format(" (+%s%% %s per tick)", fmtScalar(e.coef * 100), STAT_LABELS[e.powerStat or ((e.school or "physical") == "physical" and "ap" or "sp")]) end
     if e.stack then out = out .. string.format(", stacking up to %d times", e.maxStacks or 5) end
     if e.decayStacks then out = out .. string.format(". Each tick removes %s stacks", fmtNum(e.decayStacks)) end
     if e.rampStacks then out = out .. string.format(". Every %s ticks adds %s stack%s. Reapplications preserve accumulated stacks", fmtNum(e.rampEvery or 1), fmtNum(e.rampStacks), e.rampStacks == 1 and "" or "s") end
@@ -338,7 +343,7 @@ local function describeEffect(e, trigger, details, context)
         return string.format("%s %s %s%% less damage%s.", what, (pet and not e.charges or e.charges == 1) and "deals" or "deal", fmtNum(-e.value), duration)
       end
       local value = e.fromEvent and string.format("%s equal to %s%% of %s", STAT_LABELS[e.stat] or e.stat, fmtNum(e.fromEvent * 100), eventAmountLabel(trigger)) or fmtStat(e.stat, e.value):gsub("^%+", "")
-      local out = string.format("%s %s %s%s", what, (pet and not e.charges or e.charges == 1) and "gains" or "gain", value, duration)
+      local out = string.format("%s %s %s%s", what, ((pet or e.match.key) and not e.charges or e.charges == 1) and "gains" or "gain", value, duration)
       if e.stack then out = out .. string.format(", stacking up to %d times", e.maxStacks or 5) end
       return out .. "."
     end
@@ -382,12 +387,19 @@ local function describeEffect(e, trigger, details, context)
     if e.target and e.match and e.match.kind == "ability" and e.match.tag == "spell" and e.stat == "haste" then
       return string.format("Enemy spells recharge %s%% slower%s.", fmtNum(e.value), durationText(e))
     end
-    if e.target and e.match and e.match.tag == "autoattack" and e.stat == "haste" then
-      return string.format("Enemy auto-attacks are %s%% slower%s.", fmtNum(e.value), durationText(e))
+    if e.target and e.match and e.stat == "haste" then
+      if e.match.tag == "autoattack" then
+        return string.format("Enemy auto-attacks are %s%% slower%s.", fmtNum(e.value), durationText(e))
+      end
+      if e.match.tag == "melee" and e.match.anyTag and #e.match.anyTag == 1 and e.match.anyTag[1] == "autoattack" then
+        return string.format("Enemy melee auto-attacks are %s%% slower%s.", fmtNum(e.value), durationText(e))
+      end
     end
     local out = string.format("Enemy suffers %s%s", fmtStat(e.stat, -e.value), durationText(e))
     if e.stack then out = out .. string.format(", stacking up to %d times", e.maxStacks or 5) end
-    return out .. "."
+    out = out .. "."
+    if e.exclusiveGroup == "frost_chill" then out = out .. " Only the strongest Chill effect applies." end
+    return out
   elseif t == "refresh" then
     if e.match then
       local tag = e.match.tag
@@ -396,6 +408,7 @@ local function describeEffect(e, trigger, details, context)
     end
     return string.format("Refreshes %s.", e.name or ns.ItemsByKey[e.key] and ns.ItemsByKey[e.key].name or e.key)
   elseif t == "tickDots" then
+    if e.match and e.match.key then return "Trigger a tick of " .. statusName(e.match.key) .. "." end
     if e.match and e.match.tag == "poison" then return "Trigger a tick of your poisons." end
     if e.match and e.match.tag == "spell" then return "Trigger a tick of your spell damage over time." end
     if e.match and e.match.tag == "affliction" and e.match.notTag == "channel" then return "Trigger a tick of your Corruption, Curse of Agony and Siphon Life." end
@@ -403,7 +416,9 @@ local function describeEffect(e, trigger, details, context)
     if e.match and SCHOOL_LABELS[e.match.tag] then return "Trigger a tick of your " .. SCHOOL_LABELS[e.match.tag] .. " damage over time." end
     return e.match and e.match.tag == "bleed" and "Trigger a tick of your bleeds." or "Trigger a tick of your damage over time."
   elseif t == "tickHots" then
-    return "Trigger a tick of your HoTs."
+    if e.match and e.match.key then return "Trigger a tick of " .. statusName(e.match.key) .. "." end
+    if e.match and e.match.tag == "totem" then return "Trigger a tick of your healing totems." end
+    return "Trigger a tick of your healing over time effects."
   elseif t == "bank" then
     local target = BANK_TARGETS[e.key] or e.bankTarget
     local value = bankAmount(e, trigger)
@@ -421,7 +436,8 @@ local function describeEffect(e, trigger, details, context)
     return string.format("Gain %s %s charge%s (maximum %s).", fmtNum(amount), def and def.name or e.key, amount == 1 and "" or "s", fmtNum(e.max or 3))
   elseif t == "extraAttack" then
     local count = e.count or 1
-    return string.format("Make %d extra melee attack%s.", count, count == 1 and "" or "s")
+    local bonus = e.bonusAttackPowerPct and string.format(" with %s%% bonus Attack Power", fmtNum(e.bonusAttackPowerPct)) or ""
+    return string.format("Make %d extra melee attack%s%s.", count, count == 1 and "" or "s", bonus)
   elseif t == "cast" then
     if e.target == "source" then return "Repeat that ability for free." end
     if e.match and e.match.kind == "pet" then return "Your pet attacks again." end
@@ -562,7 +578,7 @@ local function bankReferences(def, context, details)
         end)
       end
       for _, item in ipairs(context and context.items or {}) do
-        if item.enabled and not item.suppressed then source(item.def) end
+        if not item.suppressed and (item.enabled or item.def.passiveTriggers) then source(item.def) end
       end
       if #sources == 0 then
         for _, candidate in ipairs(ns.ItemList) do
@@ -632,6 +648,9 @@ conditionLabel = function(cond)
   end
   local provided = cond:match("^provides:(.+)$")
   if provided == "pet" then return "While your pet is active" end
+  if provided == "shield" then return "While a shield is equipped" end
+  if provided == "melee" then return "While a melee weapon is equipped" end
+  if provided == "ranged" then return "While a ranged weapon is equipped" end
   if provided then return "In " .. (REQUIRE_LABELS[provided] or provided) end
   local key = cond:match("^enemyHas:(.+)$")
   if key then return "While the enemy has " .. statusName(key) end
@@ -1132,7 +1151,9 @@ function Describe.Lines(def, context)
         elseif trig.on == "anyUse" or trig.on == "adjacentUse" or trig.on == "use" then label = string.format("Every %d %scasts", trig.every, subject)
         else label = string.format("Every %d %shits", trig.every, subject) end
       end
-      if trig.match and resourceEvent then
+      if trig.on == "resourceSpent" and trig.every and trig.match and trig.match.kind == "ability" then
+        label = string.format("After casting %d %s that cost %s", trig.every, matchNoun(trig.match, true), ns.RESOURCE_NAMES[trig.resource] or trig.resource or "resources")
+      elseif trig.match and resourceEvent then
         label = label .. (trig.on == "resourceSpent" and " on " or " from ") .. matchNoun(trig.match, true)
       elseif trig.match and trig.on == "healthSpent" then
         label = label .. " through " .. matchNoun(trig.match, false)

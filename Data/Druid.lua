@@ -9,7 +9,7 @@ H.Ability{ id = 1000, key = "wrath", spec = "balance", name = "Wrath", icon = I(
   use = { cd = 1.5, cost = 8, resource = "mana", effects = { { type = "damage", min = 4, max = 6, school = "nature", coef = 0.4 } } },
   triggers = { { on = "use", effects = { { type = "cdr", target = "neighbors", match = { tag = "spell" }, amount = 0.5 } } } } }
 H.Ability{ id = 1001, key = "starfire", spec = "balance", name = "Starfire", icon = I("Spell_Arcane_StarFire"), quality = 2, cost = 5, minRound = 2, classes = DRUID, shape = S.sq, tags = { "balance", "spell", "arcane" },
-  use = { cd = 12, initialDelay = 12, cost = 28, resource = "mana", effects = { { type = "damage", min = 36, max = 48, school = "arcane", coef = 1.4, consumeDots = { match = { tag = "spell" }, fraction = 0.35 } } } } }
+  use = { cd = 12, initialDelay = 6, cost = 28, resource = "mana", effects = { { type = "damage", min = 36, max = 48, school = "arcane", coef = 1.4, consumeDots = { match = { tag = "spell" }, fraction = 0.35 } } } } }
 H.Ability{ id = 1002, key = "moonfire", spec = "balance", name = "Moonfire", icon = I("Spell_Nature_StarFall"), quality = 1, cost = 3, classes = DRUID, shape = S.v2, tags = { "balance", "spell", "arcane", "dot" },
   use = { cd = 9, cost = 12, resource = "mana", effects = { { type = "damage", min = 3, max = 5, school = "arcane", coef = 0.15 }, { type = "dot", key = "moonfire", school = "arcane", tick = 2, coef = 0.05, duration = 9, stack = true, maxStacks = 3 } } } }
 H.Ability{ id = 1003, key = "insect_swarm", spec = "resto", name = "Insect Swarm", icon = I("Spell_Nature_InsectSwarm"), quality = 2, minRound = 2, classes = DRUID, shape = S.v2, tags = { "resto", "spell", "nature", "dot" },
@@ -62,7 +62,7 @@ H.Ability{ id = 1020, key = "swipe", spec = "feral", name = "Swipe", icon = I("I
 H.Ability{ id = 1021, key = "enrage_druid", spec = "shared", shopRequires = { "bear_form" }, name = "Enrage", icon = I("Ability_Druid_Enrage"), quality = 1, cost = 2, classes = DRUID, shape = S.v2, tags = { "bear", "feral" }, rankable = false,
   use = { cd = 20, healthCostPct = 0.05, requires = "bearform", effects = { { type = "resource", resource = "rage", amount = 35 } } } }
 H.Ability{ id = 1022, key = "frenzied_regeneration", spec = "feral", name = "Frenzied Regeneration", icon = I("Ability_BullRush"), quality = 3, minRound = 5, classes = DRUID, shape = S.v2, tags = { "bear", "feral", "defensive", "heal" },
-  use = { reactive = true, cd = 15, cost = 20, resource = "rage", spendMax = 50, requires = "bearform", condition = "below50", effects = { { type = "heal", perPointPctMax = 0.004, pointResource = "rage" } } } }
+  use = { reactive = true, cd = 15, cost = 20, resource = "rage", spendMax = 50, requires = "bearform", condition = "below50", effects = { { type = "heal", perPointPctMax = 0.003, pointResource = "rage" } } } }
 H.Ability{ id = 1023, key = "demoralizing_roar", spec = "shared", name = "Demoralizing Roar", icon = I("Ability_Druid_DemoralizingRoar"), quality = 1, classes = DRUID, shape = S.v2, tags = { "bear", "feral", "defensive" },
   use = { cd = 12, cost = 10, resource = "rage", requires = "bearform", effects = { { type = "debuff", stat = "ap", value = 16, duration = 10 }, { type = "debuff", stat = "dmgPct", value = 8, duration = 10 } } } }
 H.Ability{ id = 1025, key = "leader_of_the_pack", spec = "feral", name = "Leader of the Pack", icon = I("Spell_Nature_UnyeildingStamina"), quality = 5, cost = 15, minRound = 10, classes = DRUID, shape = S.sq, tags = { "feral" },
@@ -113,7 +113,7 @@ H.Ability{ id = 1046, key = "ravage", spec = "feral", name = "Ravage", icon = I(
 H.Ability{ id = 1047, key = "blood_frenzy", spec = "feral", name = "Blood Frenzy", icon = I("Ability_GhoulFrenzy"), quality = 4, cost = 10, minRound = 7, classes = DRUID, shape = S.v2, tags = { "feral" },
   triggers = { { on = "dotTick", match = { tag = "bleed" }, everyAmount = 25, effects = { { type = "resource", resource = "combo", amount = 1 } } } } }
 H.Ability{ id = 1048, key = "furor", spec = "resto", name = "Furor", icon = I("Spell_Holy_BlessingOfStamina"), quality = 2, minRound = 2, classes = DRUID, shape = S.v2, tags = { "feral" },
-  triggers = { { on = "healed", everyAmount = 25, effects = { { type = "resource", resource = "energy", amount = 8 }, { type = "resource", resource = "rage", amount = 4 } } } } }
+  triggers = { { on = "healed", icd = 1, effects = { { type = "resource", resource = "energy", amount = 8 }, { type = "resource", resource = "rage", amount = 4 } } } } }
 
 H.Ability{ id = 2100, key = "improved_wrath", spec = "balance", shopRequires = { "wrath" }, name = "Improved Wrath", icon = I("spell_nature_abolishmagic"), quality = 1, cost = 3, classes = DRUID, shape = S.v2, tags = { "balance" },
   adjacency = { { match = { key = "wrath" }, mods = { cdPct = 20 } } },

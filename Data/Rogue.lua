@@ -22,13 +22,13 @@ ability(4004, "kidney_shot", "Kidney Shot", "assassination", "Ability_Rogue_Kidn
   use = { cd = 15, initialDelay = 0.1, cost = 3, spendAll = true, resource = "combo", requires = "melee", effects = { { type = "stun", duration = 2, rankScale = false }, { type = "buff", target = "all", match = { tag = "builder" }, stat = "crit", value = 30, charges = 1, duration = 5, key = "kidney_opening", name = "Kidney Shot" } } } })
 ability(4005, "instant_poison", "Instant Poison", "assassination", "Ability_Poisons", 1, 1, {
   tags = { "assassination", "poison", "nature" }, rankable = true,
-  triggers = { { on = "regularHit", match = { tag = "melee" }, chance = 35, effects = { { type = "damage", min = 4, max = 6, coef = 0.16, school = "nature", noDodge = true } } } } })
+  triggers = { { on = "regularHit", match = { tag = "melee" }, chance = 35, effects = { { type = "damage", min = 4, max = 6, coef = 0.16, powerStat = "ap", school = "nature", noDodge = true } } } } })
 ability(4006, "deadly_poison", "Deadly Poison", "assassination", "Ability_Rogue_DualWeild", 1, 1, {
   tags = { "assassination", "poison", "nature", "dot" }, rankable = false,
-  triggers = { { on = "regularHit", match = { tag = "melee" }, chance = 45, effects = { { type = "dot", key = "deadly_poison", tick = 1, coef = 0, school = "nature", duration = 12, stack = true, uncapped = true, preserveTicks = true } } } } })
+  triggers = { { on = "regularHit", match = { tag = "melee" }, chance = 45, effects = { { type = "dot", key = "deadly_poison", tick = 1, coef = 0.02, powerStat = "ap", school = "nature", duration = 12, stack = true, uncapped = true, preserveTicks = true } } } } })
 ability(4007, "wound_poison", "Wound Poison", "assassination", "INV_Misc_Herb_16", 2, 3, {
   tags = { "assassination", "poison", "nature" },
-  triggers = { { on = "regularHit", match = { tag = "melee" }, chance = 35, effects = { { type = "damage", min = 3, max = 5, coef = 0.1, school = "nature", noDodge = true }, { type = "debuff", stat = "healPct", value = 15, duration = 8, stack = true, maxStacks = 3, key = "wound_poison", name = "Wound Poison" } } } } })
+  triggers = { { on = "regularHit", match = { tag = "melee" }, chance = 35, effects = { { type = "damage", min = 3, max = 5, coef = 0.1, powerStat = "ap", school = "nature", noDodge = true }, { type = "debuff", stat = "healPct", value = 15, duration = 8, stack = true, maxStacks = 3, key = "wound_poison", name = "Wound Poison" } } } } })
 ability(4008, "crippling_poison", "Crippling Poison", "assassination", "Ability_PoisonSting", 2, 2, {
   tags = { "assassination", "poison", "nature", "control" },
   triggers = { { on = "regularHit", match = { tag = "melee" }, chance = 30, effects = { { type = "debuff", stat = "haste", value = 18, duration = 5, key = "crippling_poison", name = "Crippling Poison" }, { type = "cdr", target = "all", match = { tag = "finisher" }, amount = 0.5, clampReady = true } } } } })

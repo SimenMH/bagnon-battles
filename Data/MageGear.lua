@@ -4,35 +4,35 @@ local I, S = H.I, H.S
 local MAGE = { "MAGE" }
 
 H.Weapon{ id = 8400, key = "bent_staff", name = "Bent Staff", icon = I("INV_Staff_08"), quality = 1, cost = 3, classes = MAGE, weaponType = "staff", hands = 2, weaponMin = 3, weaponMax = 5, speed = 3, stats = { sp = 4 }, noShop = true, starter = true }
-H.Weapon{ id = 8401, key = "hypnotic_blade", name = "Hypnotic Blade", icon = I("INV_Weapon_ShortBlade_07"), quality = 3, cost = 7, minRound = 3, classes = { "MAGE", "WARLOCK", "SHAMAN" }, weaponType = "dagger", weaponMin = 4, weaponMax = 7, speed = 1.8, stats = { sp = 22, mana = 25 } }
-H.Weapon{ id = 8402, key = "rod_of_the_ogre_magi", name = "Rod of the Ogre Magi", icon = I("INV_Staff_29"), quality = 3, cost = 8, minRound = 5, classes = MAGE, weaponType = "staff", hands = 2, weaponMin = 8, weaponMax = 12, speed = 3, stats = { sp = 29, crit = 4, mana = 30 } }
+H.Weapon{ id = 8401, key = "hypnotic_blade", name = "Hypnotic Blade", icon = I("INV_Weapon_ShortBlade_07"), quality = 3, cost = 7, minRound = 3, classes = { "MAGE", "WARLOCK", "SHAMAN", "DRUID" }, weaponType = "dagger", weaponMin = 4, weaponMax = 7, speed = 1.8, stats = { sp = 22, mana = 25 } }
+H.Weapon{ id = 8402, key = "rod_of_the_ogre_magi", name = "Rod of the Ogre Magi", icon = I("INV_Staff_29"), quality = 3, cost = 8, minRound = 5, classes = { "MAGE", "DRUID" }, weaponType = "staff", hands = 2, weaponMin = 8, weaponMax = 12, speed = 3, stats = { sp = 29, crit = 4, mana = 30 } }
 H.Weapon{ id = 8403, key = "azuresong_mageblade", name = "Azuresong Mageblade", icon = I("INV_Sword_12"), quality = 4, cost = 11, minRound = 8, classes = MAGE, weaponType = "sword", weaponMin = 9, weaponMax = 14, speed = 2.4, stats = { sp = 48, crit = 5, mana = 30 } }
 
-H.Weapon{ id = 8404, key = "caster_scrimshaw_dagger", name = "Scrimshaw Dagger", icon = I("INV_Weapon_ShortBlade_01"), quality = 1, cost = 4, classes = { "MAGE", "WARLOCK", "SHAMAN" }, weaponType = "dagger", weaponMin = 4, weaponMax = 7, speed = 1.8, stats = { sp = 6, mana = 10 } }
-H.Weapon{ id = 8405, key = "caster_sacrificial_kris", name = "Sacrificial Kris", icon = I("INV_Weapon_ShortBlade_03"), quality = 2, cost = 5, minRound = 2, classes = { "MAGE", "WARLOCK", "SHAMAN" }, weaponType = "dagger", weaponMin = 5, weaponMax = 8, speed = 1.7, stats = { sp = 14, hp = 20 } }
+H.Weapon{ id = 8404, key = "caster_scrimshaw_dagger", name = "Scrimshaw Dagger", icon = I("INV_Weapon_ShortBlade_01"), quality = 1, cost = 4, classes = { "MAGE", "WARLOCK", "SHAMAN", "DRUID" }, weaponType = "dagger", weaponMin = 4, weaponMax = 7, speed = 1.8, stats = { sp = 6, mana = 10 } }
+H.Weapon{ id = 8405, key = "caster_sacrificial_kris", name = "Sacrificial Kris", icon = I("INV_Weapon_ShortBlade_03"), quality = 2, cost = 5, minRound = 2, classes = { "MAGE", "WARLOCK", "SHAMAN", "DRUID" }, weaponType = "dagger", weaponMin = 5, weaponMax = 8, speed = 1.7, stats = { sp = 14, hp = 20 } }
 H.Weapon{ id = 8406, key = "witchblade", name = "Witchblade", icon = I("INV_Weapon_ShortBlade_25"), quality = 3, cost = 8, minRound = 5, classes = { "MAGE", "WARLOCK" }, weaponType = "dagger", weaponMin = 6, weaponMax = 10, speed = 1.6, stats = { sp = 25, crit = 3 } }
-H.Weapon{ id = 8407, key = "sorcerous_dagger", name = "Sorcerous Dagger", icon = I("INV_Weapon_ShortBlade_07"), quality = 4, cost = 9, minRound = 7, classes = { "MAGE", "WARLOCK" }, weaponType = "dagger", weaponMin = 7, weaponMax = 12, speed = 1.8, stats = { sp = 40, mana = 45 } }
+H.Weapon{ id = 8407, key = "sorcerous_dagger", name = "Sorcerous Dagger", icon = I("INV_Weapon_ShortBlade_07"), quality = 4, cost = 9, minRound = 7, classes = { "MAGE", "WARLOCK", "DRUID" }, weaponType = "dagger", weaponMin = 7, weaponMax = 12, speed = 1.8, stats = { sp = 40, mana = 45 } }
 
-local function armor(id, key, name, icon, slot, quality, round, stats)
-  H.Armor{ id = id, key = key, name = name, icon = I(icon), classes = MAGE, armorType = "cloth", slot = slot, quality = quality, minRound = round, stats = stats }
+local function armor(id, key, name, icon, slot, quality, round, stats, classes)
+  H.Armor{ id = id, key = key, name = name, icon = I(icon), classes = classes or MAGE, armorType = "cloth", slot = slot, quality = quality, minRound = round, stats = stats }
 end
-armor(8410, "azure_silk_hood", "Azure Silk Hood", "INV_Helmet_29", "head", 1, 1, { sp = 8, mana = 15, hp = 8 })
+armor(8410, "azure_silk_hood", "Azure Silk Hood", "INV_Helmet_29", "head", 1, 1, { sp = 8, mana = 15, hp = 8 }, { "MAGE", "DRUID" })
 armor(8411, "azure_silk_vest", "Azure Silk Vest", "INV_Chest_Cloth_37", "chest", 1, 1, { sp = 15, mana = 25, hp = 13 })
-armor(8412, "azure_silk_gloves", "Azure Silk Gloves", "INV_Gauntlets_05", "hands", 1, 1, { sp = 6, crit = 2 })
-armor(8413, "azure_silk_pants", "Azure Silk Pants", "INV_Pants_08", "legs", 1, 1, { sp = 9, mana = 20 })
-armor(8414, "azure_silk_belt", "Azure Silk Belt", "INV_Belt_22", "waist", 2, 2, { sp = 11, regen = 1 })
-armor(8415, "spidersilk_boots", "Spidersilk Boots", "INV_Boots_Fabric_01", "feet", 2, 2, { sp = 9, hp = 35, healing = 10 })
-armor(8416, "silver_thread_cuffs", "Silver-thread Cuffs", "INV_Bracer_07", "wrist", 2, 2, { sp = 9, mana = 20 })
-armor(8417, "silver_thread_amice", "Silver-thread Amice", "INV_Shoulder_05", "shoulder", 2, 2, { sp = 11, healing = 12, armor = 10 })
+armor(8412, "azure_silk_gloves", "Azure Silk Gloves", "INV_Gauntlets_05", "hands", 1, 1, { sp = 6, crit = 2 }, { "MAGE", "DRUID" })
+armor(8413, "azure_silk_pants", "Azure Silk Pants", "INV_Pants_08", "legs", 1, 1, { sp = 9, mana = 20 }, { "MAGE", "DRUID" })
+armor(8414, "azure_silk_belt", "Azure Silk Belt", "INV_Belt_22", "waist", 2, 2, { sp = 11, regen = 1 }, { "MAGE", "DRUID" })
+armor(8415, "spidersilk_boots", "Spidersilk Boots", "INV_Boots_Fabric_01", "feet", 2, 2, { sp = 9, hp = 35, healing = 10 }, { "MAGE", "DRUID" })
+armor(8416, "silver_thread_cuffs", "Silver-thread Cuffs", "INV_Bracer_07", "wrist", 2, 2, { sp = 9, mana = 20 }, { "MAGE", "DRUID" })
+armor(8417, "silver_thread_amice", "Silver-thread Amice", "INV_Shoulder_05", "shoulder", 2, 2, { sp = 11, healing = 12, armor = 10 }, { "MAGE", "DRUID" })
 armor(8418, "robe_of_the_archmage", "Robe of the Archmage", "INV_Chest_Cloth_38", "chest", 4, 7, { sp = 72, mana = 60, crit = 6 })
-armor(8419, "hands_of_power", "Hands of Power", "INV_Gauntlets_06", "hands", 3, 5, { sp = 24, healing = 18, crit = 3 })
+armor(8419, "hands_of_power", "Hands of Power", "INV_Gauntlets_06", "hands", 3, 5, { sp = 24, healing = 18, crit = 3 }, { "MAGE", "DRUID" })
 H.Jewel{ id = 8420, key = "fire_ruby", name = "Fire Ruby", icon = I("INV_Misc_Gem_Bloodstone_02"), kind = "trinket", quality = 3, minRound = 4, classes = MAGE, stats = { sp = 9 },
   triggers = { { on = "resourceSpent", resource = "mana", everyAmount = 40, effects = { { type = "buff", key = "fire_ruby", stat = "crit", value = 100, charges = 1, duration = 10, target = "all", match = { tag = "fire", damaging = "direct" } } } } } }
 H.Jewel{ id = 8421, key = "mind_quickening_gem", name = "Mind Quickening Gem", icon = I("Spell_Nature_WispHeal"), kind = "trinket", quality = 4, minRound = 8, classes = MAGE,
   use = { cd = 24, effects = { { type = "buff", key = "mind_quickening_gem", stat = "haste", value = 40, duration = 8, target = "all", match = { tag = "spell" } } } } }
 H.Jewel{ id = 8422, key = "freezing_band", name = "Freezing Band", icon = I("INV_Jewelry_Ring_14"), kind = "ring", quality = 4, minRound = 7, classes = MAGE, stats = { sp = 24, healing = 16 },
   triggers = { { on = "absorbed", everyAmount = 35, effects = { { type = "stun", duration = 0.8 } } } } }
-H.Jewel{ id = 8423, key = "choker_of_the_fire_lord", name = "Choker of the Fire Lord", icon = I("INV_Jewelry_Necklace_11"), kind = "neck", quality = 4, minRound = 8, classes = MAGE, stats = { sp = 42, mana = 30, crit = 3 } }
+H.Jewel{ id = 8423, key = "choker_of_the_fire_lord", name = "Choker of the Fire Lord", icon = I("INV_Jewelry_Necklace_11"), kind = "neck", quality = 4, minRound = 8, classes = { "MAGE", "DRUID" }, stats = { sp = 42, mana = 30, crit = 3 } }
 H.Jewel{ id = 8424, key = "mage_silver_thread_cloak", name = "Silver-thread Cloak", icon = I("INV_Misc_Cape_02"), kind = "cloak", quality = 2, minRound = 2, classes = MAGE, shape = S.h2, stats = { sp = 14, hp = 20, healing = 10 } }
 H.Jewel{ id = 8425, key = "mage_ring_of_spell_power", name = "Ring of Spell Power", icon = I("INV_Jewelry_Ring_13"), kind = "ring", quality = 3, minRound = 5, classes = MAGE, stats = { sp = 25, mana = 25 } }
 

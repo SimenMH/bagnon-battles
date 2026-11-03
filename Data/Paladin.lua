@@ -36,7 +36,7 @@ ability(5005, "holy_shock", "Holy Shock", "holy", "spell_holy_searinglight", 3,
     { type = "damage", min = 14, max = 20, coef = 0.45, school = "holy", spendBank = "paladin_holy", bankLabel = "stored healing", noDodge = true },
     { type = "heal", min = 8, max = 12, coef = 0.3, cond = "injured" },
   } }, { minRound = 3, shape = S.L, tags = { "holy", "spell", "heal" }, triggers = {
-    { on = "healed", effects = { { type = "bank", key = "paladin_holy", fraction = 0.3 } } },
+    { on = "healed", effects = { { type = "bank", key = "paladin_holy", fraction = 0.15 } } },
   } })
 passive(5006, "illumination", "Illumination", "holy", "spell_holy_greaterheal", 2, {
   { on = "anyCrit", healing = true, match = { tag = "heal" }, effects = { { type = "resource", resource = "mana", amount = 10 } } },
@@ -89,7 +89,9 @@ passive(5024, "righteous_fury", "Righteous Fury", "protection", "spell_holy_seal
   { on = "regularHit", match = { tag = "melee" }, effects = { { type = "damage", school = "holy", spendBank = "paladin_sanctuary", bankLabel = "stored prevented damage", bankScale = 0.5, noCrit = true, noDodge = true, noOwnTriggers = true } } },
 }, { stats = { armor = 10 } })
 passive(5025, "paladin_toughness", "Toughness", "protection", "spell_holy_devotion", 1, {}, { stats = { armor = 24 }, shape = S.one })
-passive(5026, "paladin_shield_specialization", "Shield Specialization", "protection", "inv_shield_06", 2, {}, { stats = { block = 10 }, minRound = 2, shape = S.one })
+passive(5026, "paladin_shield_specialization", "Shield Specialization", "protection", "inv_shield_06", 2, {
+  { on = "block", condition = "provides:shield", effects = { { type = "absorb", fromEvent = 0.3 } } },
+}, { stats = { block = 10 }, minRound = 2, shape = S.one })
 passive(5027, "anticipation_paladin", "Anticipation", "protection", "spell_nature_mirrorimage", 2, {}, { stats = { dodge = 6, armor = 8 }, shape = S.one, minRound = 2, shopClasses = {} })
 passive(5028, "improved_devotion_aura", "Improved Devotion Aura", "protection", "spell_holy_devotionaura", 2, {
   { on = "armorPrevented", everyAmount = 20, effects = { { type = "absorb", amount = 4, coef = 0.08 } } },
@@ -174,7 +176,7 @@ passive(5054, "improved_seal_of_the_crusader", "Improved Seal of the Crusader", 
 
 seal(5060, "seal_of_light", "Seal of Light", "shared", "spell_holy_healingaura", 2, {
   { on = "regularHit", match = { tag = "melee" }, effects = { { type = "heal", min = 3, max = 5, coef = 0.1 } } },
-  { on = "healed", effects = { { type = "bank", key = "paladin_seal", fraction = 0.4 } } },
+  { on = "healed", effects = { { type = "bank", key = "paladin_seal", fraction = 0.1 } } },
 }, { minRound = 2, tags = { "seal", "holy", "heal" } })
 seal(5061, "seal_of_wisdom", "Seal of Wisdom", "shared", "spell_holy_righteousnessaura", 2, {
   { on = "regularHit", match = { tag = "melee" }, effects = { { type = "resource", resource = "mana", amount = 4 } } },

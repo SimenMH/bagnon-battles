@@ -53,7 +53,7 @@ function H.Weapon(t)
     end
     for _, key in ipairs(classes) do
       local allowed = true
-      if caster and not physical and key == "WARRIOR" then allowed = false end
+      if caster and not physical and (key == "WARRIOR" or key == "ROGUE") then allowed = false end
       if not caster and (key == "MAGE" or key == "WARLOCK" or key == "PRIEST") then allowed = false end
       if t.hands == 2 and (key == "ROGUE" or key == "PRIEST" and t.weaponType ~= "staff"
         or (key == "MAGE" or key == "WARLOCK") and t.weaponType ~= "staff") then allowed = false end
@@ -62,7 +62,7 @@ function H.Weapon(t)
   end
   local ranged = ns.RANGED_WEAPON_TYPES[t.weaponType] == true
   local launcher = ranged and t.weaponType ~= "wand"
-  if launcher then t.coef = t.coef or 0.30 end
+  if launcher then t.coef = t.coef or math.floor(15 * (t.speed or 2.4) + 0.5) / 100 end
   if not t.shape then
     if t.hands == 2 or launcher then t.shape = H.S.v4
     elseif t.weaponType == "dagger" or t.weaponType == "wand" then t.shape = H.S.v2

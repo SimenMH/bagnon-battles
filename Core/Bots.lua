@@ -207,7 +207,7 @@ function Bots.Generate(classKey, round, seed, archetypeId)
   local plan = assert(planRng:Pick(#availablePlans > 0 and availablePlans or plans), "No available bot archetype.")
   local payoff = ns.ItemsByKey[plan.payoff]
   local payoffRound = payoff.minRound + (payoff.quality >= 3 and planRng:Range(0, 2) or 0)
-  local budget = math.floor(ns.Economy.CumulativeGold(round) * (0.77 + rng:Next() * 0.12)) + ns.StarterValue(class)
+  local budget = math.floor(ns.Economy.CumulativeGold(round) * (0.77 + rng:Next() * 0.12 - 0.10 * math.max(0, 8 - round) / 7)) + ns.StarterValue(class)
   local gold, grid = budget, ns.Grid.New()
   local desiredRank = round >= 10 + rng:Range(0, 3) and rng:Chance(65) and 3 or round >= 4 + rng:Range(0, 3) and 2 or 1
   local supportLimit = math.min(6, 1 + math.floor(round / 3))

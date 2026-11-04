@@ -702,7 +702,7 @@ ability(3286, "remove_curse_druid", "Remove Curse", "shared", "Spell_Holy_Remove
 
 
 
-ability(3287, "prowl_druid", "Prowl", "feral", "Ability_Druid_SupriseAttack", 1, {
+ability(3287, "prowl_druid", "Prowl", "feral", "Ability_Ambush", 1, {
   cost = 2, tags = { "feral", "preparation" },
   triggers = { { on = "battleStart", condition = "provides:catform", effects = { { type = "buff", key = "druid_prowl", name = "Prowl", stat = "none", value = 0, duration = 12 } } } },
   rankable = false,

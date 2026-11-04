@@ -5,6 +5,11 @@ local L = ns.L
 local Training = {}
 ns.UI.Training = Training
 
+local function setRankBorder(card)
+  if card.selected then card:SetBorderColor(T.RGB(T.C.gold))
+  else card:SetBorderColor(T.C.ink[1], T.C.ink[2], T.C.ink[3], 0.95) end
+end
+
 local function chooseRank(overlay, rank)
   local r = ns.run
 
@@ -54,6 +59,8 @@ local function refresh(overlay)
     local rank = ranks[i]
     local def = rank and ns.Ranks.Definition(info.base, rank)
     card.rank = rank
+    card.selected = def ~= nil and rank == info.rank
+    setRankBorder(card)
     if def then
       card:SetSize(width, 175)
       card:ClearAllPoints()
@@ -157,7 +164,7 @@ function Training.Create(parent, onChange, getContext)
     end)
     card:SetScript("OnLeave", function(self)
       self:SetFillColor(T.RGB(T.C.bg3))
-      self:SetBorderColor(T.C.ink[1], T.C.ink[2], T.C.ink[3], 0.95)
+      setRankBorder(self)
       ns.UI.Tooltip.Hide()
     end)
     overlay.cards[i] = card

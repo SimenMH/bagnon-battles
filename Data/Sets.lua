@@ -3,7 +3,7 @@ local H = ns.H
 
 ns.RegisterSet{ key = "feralheart", name = "Feralheart Raiment",
   bonuses = {
-    [2] = { triggers = { { on = "anyUse", match = { tag = "feral", anyTag = { "strike" } }, effects = { { type = "dot", key = "rake", school = "physical", tick = 3, coef = 0.08, duration = 9 } } } }, text = "Your Feral strikes also apply a bleed lasting 9 seconds." },
+    [2] = { triggers = { { on = "anyUse", match = { tag = "feral", anyTag = { "strike" } }, effects = { { type = "dot", key = "rake", school = "physical", tick = 3, coef = 0.08, duration = 9 } } } }, text = "Your Feral strikes apply a bleed, dealing 3 damage (+8% Attack Power) per second for 9 sec." },
     [4] = { triggers = {
       { on = "anyCrit", match = { tag = "finisher" }, effects = { { type = "resource", resource = "combo", amount = 3 } } },
       { on = "anyCrit", healing = false, match = { key = "maul" }, effects = { { type = "resource", resource = "rage", amount = 8 } } },

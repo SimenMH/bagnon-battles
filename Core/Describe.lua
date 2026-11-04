@@ -1900,9 +1900,24 @@ function Describe.Lines(def, context)
       if #parts > 0 then add("  Requires " .. table.concat(parts, " and ") .. ".", { r = 1, g = 0.4, b = 0.4 }) end
     end
   end
-  local sharedCooldowns, emittedCooldowns = {}, {}
-  for _, trig in ipairs(def.triggers) do
+  local sharedCooldowns, emittedCooldowns, spendingIntros, combinedTriggers = {}, {}, {}, {}
+  for index, trig in ipairs(def.triggers) do
     if trig.counterKey and trig.icd then sharedCooldowns[trig.counterKey] = (sharedCooldowns[trig.counterKey] or 0) + 1 end
+    if not combinedTriggers[trig] and trig.on == "resourceSpent" and trig.counterKey and trig.resource and trig.everyAmount then
+      local costs, resources = { fmtNumber(trig.everyAmount) .. " " .. (ns.RESOURCE_NAMES[trig.resource] or trig.resource) }, { [trig.resource] = true }
+      for otherIndex = index + 1, #def.triggers do
+        local other = def.triggers[otherIndex]
+        if not combinedTriggers[other] and other.resource and other.everyAmount and not resources[other.resource] then
+          local compared = Util.ShallowCopy(other)
+          compared.resource, compared.everyAmount = trig.resource, trig.everyAmount
+          if sameEffect(trig, compared) then
+            costs[#costs + 1] = fmtNumber(other.everyAmount) .. " " .. (ns.RESOURCE_NAMES[other.resource] or other.resource)
+            resources[other.resource], combinedTriggers[other] = true, true
+          end
+        end
+      end
+      if #costs > 1 then spendingIntros[trig] = "For every " .. joinOr(costs) .. " spent" end
+    end
   end
   for _, trig in ipairs(def.triggers) do
     local effect = trig.effects[1]
@@ -1910,7 +1925,7 @@ function Describe.Lines(def, context)
     local petRecovery = trig.on == "damaged" and trig.condition == "provides:pet" and #trig.effects == 1
       and not (trig.chance or trig.every or trig.everyAmount or trig.icd or trig.matchAttacker or trig.match)
       and effect.type == "cdr" and effect.target == "all" and effect.match and effect.match.kind == "pet"
-    if sharedShadow and trig.on == "anyHit" then
+    if combinedTriggers[trig] or sharedShadow and trig.on == "anyHit" then
 
     elseif (details or not trig.detail) and petRecovery then
       local pet = def.classes and #def.classes == 1 and def.classes[1] == "WARLOCK" and "demon" or "pet"
@@ -1972,7 +1987,7 @@ function Describe.Lines(def, context)
           text = condition:gsub("^%l", string.upper) .. ", " .. text:gsub("^%u", string.lower)
         end
       else
-        local intro = triggerIntro(def, trig, context, sharedShadow)
+        local intro = spendingIntros[trig] or triggerIntro(def, trig, context, sharedShadow)
         if trig.matchAttacker then
           local attacker = triggerArticle(matchNoun(trig.matchAttacker, false), trig.matchAttacker.key)
           intro = intro .. (trig.on == "damaged" and trig.critical == true and " by " or " from ") .. attacker

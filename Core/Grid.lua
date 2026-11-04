@@ -73,7 +73,7 @@ function Grid:HomeMoveCells()
   return cells
 end
 
-local function homeMovePlan(grid, x, y)
+local function homeMovePlan(grid, x, y, stashSpace)
   if not validHome({ x, y }) then return nil, "Backpack must stay inside the board." end
   local dx, dy = x - grid.home.x, y - grid.home.y
   local cells, occ, moving, cargoCells = {}, {}, {}, {}
@@ -85,52 +85,47 @@ local function homeMovePlan(grid, x, y)
       cells[cell] = "start"
     end
   end
-  local cargo = grid:HomeCargo()
-  for _, p in ipairs(cargo) do moving[p] = true end
+  local originalCargo, cargo, stashed = grid:HomeCargo(), {}, {}
+  for _, p in ipairs(originalCargo) do moving[p] = true end
   for cell, owner in pairs(grid.occ) do if not moving[owner] then occ[cell] = owner end end
-  for _, p in ipairs(cargo) do
-    local translated = {}
+  for _, p in ipairs(originalCargo) do
+    local translated, problem = {}
     for _, cell in ipairs(p.cells) do
       local cx, cy = cell % 100 + dx, math.floor(cell / 100) + dy
-      if not grid:InBounds(cx, cy) then return nil, "Items must stay inside the board." end
       local target = key(cx, cy)
-      if not cells[target] then return nil, "An item would leave bag space." end
-      if occ[target] then return nil, "Items would overlap." end
-      occ[target] = p
+      if not grid:InBounds(cx, cy) then problem = "Items must stay inside the board." break end
+      if not cells[target] then problem = "An item would leave bag space." break end
+      if occ[target] then problem = "Items would overlap." break end
       translated[#translated + 1] = target
     end
-    cargoCells[p] = translated
-  end
-  local reached, pending = {}, { key(x, y) }
-  reached[pending[1]] = true
-  while #pending > 0 do
-    local cell = table.remove(pending)
-    local cx, cy = cell % 100, math.floor(cell / 100)
-    for _, adjacent in ipairs({ key(cx + 1, cy), key(cx - 1, cy), key(cx, cy + 1), key(cx, cy - 1) }) do
-      if cells[adjacent] and not reached[adjacent] then reached[adjacent] = true pending[#pending + 1] = adjacent end
+    if problem then
+      if #stashed >= (stashSpace or 0) then return nil, problem end
+      stashed[#stashed + 1] = p
+    else
+      for _, cell in ipairs(translated) do occ[cell] = p end
+      cargo[#cargo + 1] = p
+      cargoCells[p] = translated
     end
   end
-  for cell in pairs(cells) do
-    if not reached[cell] then return nil, "Bags must stay connected." end
-  end
-  return { cells = cells, occ = occ, cargo = cargo, cargoCells = cargoCells, dx = dx, dy = dy }
+  return { cells = cells, occ = occ, cargo = cargo, cargoCells = cargoCells, stashed = stashed, dx = dx, dy = dy }
 end
 
-function Grid:CanMoveHome(x, y)
-  local plan, err = homeMovePlan(self, x, y)
+function Grid:CanMoveHome(x, y, stashSpace)
+  local plan, err = homeMovePlan(self, x, y, stashSpace)
   return plan ~= nil, err
 end
 
-function Grid:MoveHome(x, y)
-  local plan, err = homeMovePlan(self, x, y)
+function Grid:MoveHome(x, y, stashSpace)
+  local plan, err = homeMovePlan(self, x, y, stashSpace)
   if not plan then return false, err end
   for _, p in ipairs(plan.cargo) do
     p.x, p.y = p.x + plan.dx, p.y + plan.dy
     for i, cell in ipairs(plan.cargoCells[p]) do p.cells[i] = cell end
   end
+  for _, p in ipairs(plan.stashed) do self:RemoveItem(p) end
   self.home.x, self.home.y = x, y
   self.cells, self.occ = plan.cells, plan.occ
-  return true
+  return true, nil, plan.stashed
 end
 
 function Grid:ItemAt(x, y)
@@ -149,17 +144,11 @@ function Grid:CanPlaceBag(def, x, y, rot)
   if def.kind ~= "bag" then return false, "not a bag" end
   if #self.bags >= ns.MAX_BAGS then return false, "You can only carry " .. ns.MAX_BAGS .. " bags." end
   local cells = footprint(def, x, y, rot)
-  local touches = false
   for i = 1, #cells do
     local cx, cy = cells[i][1], cells[i][2]
     if not self:InBounds(cx, cy) then return false, "Out of bounds." end
     if self.cells[key(cx, cy)] then return false, "Overlaps your backpack." end
-    if self.cells[key(cx + 1, cy)] or self.cells[key(cx - 1, cy)]
-      or self.cells[key(cx, cy + 1)] or self.cells[key(cx, cy - 1)] then
-      touches = true
-    end
   end
-  if not touches then return false, "Bags must touch your backpack." end
   return true
 end
 
@@ -185,35 +174,9 @@ function Grid:BagHasItems(p)
   return false
 end
 
-local function canDetachBag(self, p)
-  local remaining = {}
-  for i = 1, #self.bags do if self.bags[i] ~= p then remaining[#remaining + 1] = self.bags[i] end end
-  local reach = {}
-  local stack = {}
-  for k, v in pairs(self.cells) do if v == "start" then reach[k] = true stack[#stack + 1] = k end end
-  local removed = Util.Set(p.cells)
-  while #stack > 0 do
-    local k = table.remove(stack)
-    local x, y = k % 100, math.floor(k / 100)
-    for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
-      local nk = key(x + d[1], y + d[2])
-      if self.cells[nk] and not removed[nk] and not reach[nk] then
-        reach[nk] = true
-        stack[#stack + 1] = nk
-      end
-    end
-  end
-  for i = 1, #remaining do
-    for _, k in ipairs(remaining[i].cells) do
-      if not reach[k] then return false, "Another bag depends on this one." end
-    end
-  end
-  return true
-end
-
 function Grid:CanRemoveBag(p)
   if self:BagHasItems(p) then return false, "Empty the bag first." end
-  return canDetachBag(self, p)
+  return true
 end
 
 function Grid:RemoveBag(p)
@@ -335,8 +298,6 @@ function Grid:BagItems(p)
 end
 
 function Grid:LiftBag(p)
-  local ok, err = canDetachBag(self, p)
-  if not ok then return nil, err end
   local items = self:BagItems(p)
   local cargo = {}
   for _, it in ipairs(items) do cargo[#cargo + 1] = { id = it.id, uid = it.uid, dx = it.x - p.x, dy = it.y - p.y, rot = it.rot } end
@@ -345,21 +306,34 @@ function Grid:LiftBag(p)
   return cargo
 end
 
-function Grid:PlaceBagWithCargo(def, x, y, rot, cargo)
-  local p, err = self:PlaceBag(def, x, y, rot)
+local function bagCargoPlan(grid, def, x, y, rot, cargo, stashSpace)
+  local attempt = setmetatable(Util.ShallowCopy(grid), Grid)
+  for _, field in ipairs({ "cells", "occ", "bags", "items" }) do attempt[field] = Util.ShallowCopy(grid[field]) end
+  local p, err = attempt:PlaceBag(def, x, y, rot)
   if not p then return nil, err end
-  local placed = {}
+  local stashed = {}
   for _, c in ipairs(cargo or {}) do
-    local ip = self:PlaceItem(ns.Items[c.id], x + c.dx, y + c.dy, c.rot)
+    local ip = attempt:PlaceItem(ns.Items[c.id], x + c.dx, y + c.dy, c.rot)
     if not ip then
-      for _, q in ipairs(placed) do self:RemoveItem(q) end
-      self:RemoveBag(p)
-      return nil, "The items inside would not fit there."
+      if #stashed >= (stashSpace or 0) then return nil, "The items inside would not fit there." end
+      stashed[#stashed + 1] = c
+    elseif c.uid then
+      ip.uid = c.uid
     end
-    if c.uid then ip.uid = c.uid end
-    placed[#placed + 1] = ip
   end
-  return p
+  return { grid = attempt, placement = p, stashed = stashed }
+end
+
+function Grid:CanPlaceBagWithCargo(def, x, y, rot, cargo, stashSpace)
+  local plan, err = bagCargoPlan(self, def, x, y, rot, cargo, stashSpace)
+  return plan ~= nil, err
+end
+
+function Grid:PlaceBagWithCargo(def, x, y, rot, cargo, stashSpace)
+  local plan, err = bagCargoPlan(self, def, x, y, rot, cargo, stashSpace)
+  if not plan then return nil, err end
+  for _, field in ipairs({ "cells", "occ", "bags", "items", "nextUid" }) do self[field] = plan.grid[field] end
+  return plan.placement, nil, plan.stashed
 end
 
 function Grid:CountItem(id)

@@ -485,15 +485,24 @@ function Run:LiftPlacement(p)
   return def
 end
 
+function Run:CanPlaceHeld(def, x, y, rot, cargo)
+  if self.phase ~= "shop" then return false, "Not in the shop." end
+  if def.kind == "bag" then
+    return self.grid:CanPlaceBagWithCargo(def, x, y, rot, cargo, Run.STASH_SIZE - #self.stash)
+  end
+  return self.grid:CanPlaceItem(def, x, y, rot)
+end
+
 function Run:PlaceHeld(def, x, y, rot, cargo, uid)
   if self.phase ~= "shop" then return nil, "Not in the shop." end
-  local p, err
+  local p, err, stashed
   if def.kind == "bag" then
-    p, err = self.grid:PlaceBagWithCargo(def, x, y, rot, cargo)
+    p, err, stashed = self.grid:PlaceBagWithCargo(def, x, y, rot, cargo, Run.STASH_SIZE - #self.stash)
   else
     p, err = self.grid:PlaceItem(def, x, y, rot)
   end
   if p and uid then p.uid = uid end
+  if p then for _, item in ipairs(stashed or {}) do self.stash[#self.stash + 1] = item.id end end
   return p, err
 end
 
@@ -505,9 +514,16 @@ function Run:SellHeld(def)
   return price
 end
 
+function Run:CanMoveHome(x, y)
+  if self.phase ~= "shop" then return false, "Not in the shop." end
+  return self.grid:CanMoveHome(x, y, Run.STASH_SIZE - #self.stash)
+end
+
 function Run:MoveHome(x, y)
   if self.phase ~= "shop" then return false, "Not in the shop." end
-  return self.grid:MoveHome(x, y)
+  local ok, err, stashed = self.grid:MoveHome(x, y, Run.STASH_SIZE - #self.stash)
+  if ok then for _, item in ipairs(stashed) do self.stash[#self.stash + 1] = item.id end end
+  return ok, err
 end
 
 function Run:Sell(p)

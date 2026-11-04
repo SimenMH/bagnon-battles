@@ -527,8 +527,7 @@ end
 
 local function canPlaceCursor(def, x, y, rot)
   local r = run()
-  if def.kind == "bag" then return r.grid:CanPlaceBag(def, x, y, rot) end
-  return r.grid:CanPlaceItem(def, x, y, rot)
+  return r:CanPlaceHeld(def, x, y, rot, cursor and cursor.cargo)
 end
 
 local function pickUpFromStash(index)
@@ -554,8 +553,12 @@ local function cancelCursor()
   end
   if r then
     if cursor.origin == "grid" then
-      local pl = cursor.placement
-      restored = r:PlaceHeld(ns.Items[pl.id], pl.x, pl.y, pl.rot, cursor.cargo, cursor.uid) ~= nil
+      if cursor.def.kind == "bag" then
+        endHold(true)
+      else
+        local pl = cursor.placement
+        restored = r:PlaceHeld(ns.Items[pl.id], pl.x, pl.y, pl.rot, cursor.cargo, cursor.uid) ~= nil
+      end
     elseif cursor.origin == "stash" then
       restored = r:StashAdd(cursor.def)
     elseif cursor.origin == "swap" then
@@ -574,7 +577,8 @@ end
 
 function Shop.BeginHomeMove(x, y)
   local r = run()
-  if not r or r.phase ~= "shop" or cursor or not r.grid:IsHomeCell(x, y) or r.grid:ItemAt(x, y) then return false end
+  if not r or r.phase ~= "shop" or cursor or not r.grid:IsHomeCell(x, y)
+    or r.grid:ItemAt(x, y) and not (IsAltKeyDown and IsAltKeyDown()) then return false end
   homeMove = { grid = r.grid, grabX = x - r.grid.home.x, grabY = y - r.grid.home.y }
   hideHomeTooltip()
   hideBagTooltip()
@@ -776,7 +780,7 @@ function Shop.Hover(x, y)
     local r = run()
     if not r or r.phase ~= "shop" or r.grid ~= homeMove.grid then cancelHomeMove() return end
     local tx, ty = x - homeMove.grabX, y - homeMove.grabY
-    screen.grid:ShowHomePreview(tx, ty, r.grid:CanMoveHome(tx, ty))
+    screen.grid:ShowHomePreview(tx, ty, r:CanMoveHome(tx, ty))
     return
   end
   if inspectBagAt(x, y) then screen.grid:ClearPreview() return end
@@ -848,6 +852,12 @@ local function onItemClick(p, button)
   if button == "RightButton" then
     if IsShiftKeyDown() then sellPlacement(p) else openTraining(p) end
     return
+  end
+  if IsAltKeyDown and IsAltKeyDown() then
+    local x, y = screen.grid:CellAtCursor()
+    if x and r.grid:IsHomeCell(x, y) then Shop.BeginHomeMove(x, y) return end
+    local bag = x and r.grid:CellBag(x, y)
+    if bag then pickUpFromGrid(bag) return end
   end
   pickUpFromGrid(p)
 end

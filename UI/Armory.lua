@@ -42,7 +42,7 @@ local TAG_TESTS = {
   heal = function(i, def)
     return i.effects.heal or i.effects.hot or i.effects.tickHots or i.tags.heal or i.tags.hot or (def.stats.healing or 0) > 0 or (def.stats.lifesteal or 0) > 0
   end,
-  dot = function(i) return i.effects.dot or i.effects.tickDots or i.effects.consumeDots or i.triggers.dotTick or i.tags.dot or i.tags.bleed end,
+  dot = function(i) return i.effects.dot or i.effects.tickDots or i.effects.consumeDots or i.triggers.dotTick or i.tags.dot and not i.nonDamageCarrier or i.tags.bleed end,
   defensive = function(i)
     return i.tags.defensive or i.effects.absorb or i.buffs.dr or i.buffs.dodge or i.buffs.armor or i.buffs.block or i.buffs.blockChance
   end,
@@ -89,6 +89,10 @@ local function inspect(def)
   }
   local function relate(flags) for _, flag in ipairs(list(flags)) do info.related[flag] = true end end
   local function condition(value)
+    if type(value) == "table" then
+      for _, entry in ipairs(value) do condition(entry) end
+      return
+    end
     local provided = type(value) == "string" and value:match("^provides:(.+)$")
     if provided then relate(provided) end
   end
@@ -111,11 +115,21 @@ local function inspect(def)
   end
   local function effects(entries)
     for _, effect in ipairs(entries or {}) do
-      info.effects[effect.type] = true
+      if effect.type == "dot" and (effect.directTicks or effect.drainResource) then
+        info.nonDamageCarrier = true
+        info.effects[effect.directTicks and "damage" or "drain"] = true
+        if effect.drainResource then
+          info.resources[effect.drainResource] = true
+          if effect.transfer then info.gains[effect.drainResource] = true end
+        end
+      else info.effects[effect.type] = true end
       match(effect.match)
       match(effect.double)
       if effect.consumeDots then info.effects.consumeDots = true match(effect.consumeDots.match) end
-      if effect.type == "resource" then info.resources[effect.resource] = true info.gains[effect.resource] = true end
+      if effect.type == "resource" then
+        info.resources[effect.resource] = true
+        if (effect.amount or 0) > 0 or (effect.fromEvent or 0) > 0 then info.gains[effect.resource] = true end
+      end
       if effect.type == "buff" then info.buffs[effect.stat] = true end
       if effect.type == "debuff" then info.debuffs[effect.stat] = true end
       if effect.type == "cast" then reference(effect.key) end
@@ -258,13 +272,16 @@ local function refreshCards()
       card.iconSlot:SetQuality(def.quality)
       ns.UI.GridView.SetRankBadge(card.iconSlot, def)
       card.glyph:SetItem(def)
+      card.price:SetWidth(64)
       card.price:SetText(tostring(base.cost))
-      card.price:SetWidth(math.ceil(card.price:GetStringWidth()))
-      local slots = ns.Ranks.MaxRank(base) > 3 and 5 or 3
+      local priceWidth = card.price.GetUnboundedStringWidth and card.price:GetUnboundedStringWidth() or card.price:GetStringWidth()
+      card.price:SetWidth(math.ceil(priceWidth) + 4)
+      local trainable = base.rankable == true and ns.Ranks.TrainableMaxRank(base) > 1
+      local slots = ns.Ranks.TrainableMaxRank(base) > 3 and 5 or 3
       local ranks, rankPage, rankPages = ns.Ranks.Page(base, screen.rankPages[base.key], slots, rank)
       screen.rankPages[base.key] = rankPage
       card.rankPage = rankPage
-      local paged = rankPages > 1 and base.rankable == true
+      local paged = rankPages > 1 and trainable
       card.previousRankPage:SetShown(paged)
       card.nextRankPage:SetShown(paged)
       card.previousRankPage:SetEnabled(rankPage > 1)
@@ -273,14 +290,14 @@ local function refreshCards()
       local right = paged and 32 or 10
       card.previousRankPage:ClearAllPoints()
       card.previousRankPage:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -right - slots * (width + gap) - 1, 9)
-      local glyphRight = base.rankable == true and right + slots * (width + gap) + 7 or 12
+      local glyphRight = trainable and right + slots * (width + gap) + 7 or 12
       card.glyph:ClearAllPoints()
       card.glyph:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -glyphRight, 10)
       for number, button in ipairs(card.rankButtons) do
         local actualRank = ranks[number]
         button.rank = actualRank
         button.def = actualRank and ns.Ranks.Definition(base, actualRank)
-        button:SetShown(base.rankable == true and button.def ~= nil)
+        button:SetShown(trainable and button.def ~= nil)
         button:SetHighlighted(actualRank == rank)
         button:SetText(actualRank and (paged and tostring(actualRank) or string.format(L["Rank %d"], actualRank)) or "")
         button:SetWidth(width)

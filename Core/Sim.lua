@@ -16,22 +16,25 @@ Sim.RAGE_PER_DAMAGE_TAKEN = 0.2
 
 local STAT_KEYS = { "hp", "hpPct", "armor", "ap", "sp", "crit", "critDamage", "haste", "dodge", "block", "blockChance", "thorns",
   "lifesteal", "healing", "mana", "regen", "dr", "dmgPct", "healPct", "petPct", "rangedPct", "meleePct", "spellPct",
-  "ragePct", "rageTakenPct", "rageOnCrit" }
+  "ragePct", "rageTakenPct", "rageOnCrit", "rageRegen" }
 Sim.STAT_KEYS = STAT_KEYS
 
-local MOD_KEYS = { "dmgPct", "healPct", "crit", "haste", "costPct", "cdPct", "flat", "ammoEffectPct" }
+local MOD_KEYS = { "dmgPct", "healPct", "crit", "haste", "costPct", "costFlat", "durationPct", "prepareFlat", "cdPct", "flat", "ammoEffectPct" }
 Sim.MOD_KEYS = MOD_KEYS
+Sim.ITEM_STATS = Util.Set{ "delayFlat", "prepareFlat", "bankPct", "extraAttackBonusPct", "costPct", "costFlat", "durationPct", "procChance", "dodgeIgnore" }
 
 Sim.EFFECT_TYPES = Util.Set{ "tickDots", "tickHots", "damage", "heal", "dot", "hot", "refresh", "buff", "debuff", "resource", "bank",
-  "charge", "sacrificePet", "extraAttack", "cast", "absorb", "stun", "clearControl", "cdr", "cleanse", "purge", "drain" }
+  "charge", "sacrificePet", "extraAttack", "cast", "absorb", "stun", "clearControl", "cdr", "cleanse", "purge", "drain", "reapplyCoatings", "reapplyImbue" }
 Sim.ITEM_KEY_EFFECTS = Util.Set{ "cast", "charge" }
 
 Sim.TRIGGER_EVENTS = Util.Set{ "battleStart", "use", "anyUse", "adjacentUse", "hit", "anyHit", "adjacentHit", "crit", "anyCrit",
   "adjacentCrit", "regularHit", "extraHit", "damaged", "block", "absorbed", "armorPrevented", "targetDodged", "dodged", "healed",
   "hotTick", "dotTick", "healthSpent", "resourceGained", "resourceSpent", "resourceOverflow", "below40", "lowHealth", "stunned",
-  "enemyStunned" }
+  "enemyStunned", "coatingApplied", "channelComplete" }
 
 local floor, max, min = math.floor, math.max, math.min
+local applyEffect
+local applyHealing
 
 function Sim.InitialCooldown(use, maximum)
   maximum = maximum or use.cd
@@ -145,7 +148,7 @@ local function ownerStat(side, stat)
   local strongest
   for i = 1, #side.buffs do
     local b = side.buffs[i]
-    if b.stat == stat and not b.itemMatch and not b.paidOnly and not (stat == "dr" and (b.damageSchool or b.rangedOnly)) then
+    if b.stat == stat and not b.itemMatch and not b.paidOnly and not ((stat == "dr" or stat == "dmgPct") and (b.damageSchool or b.rangedOnly)) then
       local value = b.value
       if b.missingHealth then value = value * max(0, 1 - side.hp / side.hpMax) end
       if b.exclusiveGroup and value < 0 then
@@ -181,9 +184,22 @@ end
 local function mitigateDamage(side, amount, school, ranged)
   local reduction = ownerStat(side, "dr") + scopedDamageReduction(side, school, ranged)
   amount = amount * (1 - min(0.9, reduction / 100))
-  local absorbed = min(side.absorb, amount)
-  side.absorb = side.absorb - absorbed
-  return amount - absorbed, absorbed
+  local absorbed = 0
+  for _, ward in ipairs(side.scopedAbsorbs or {}) do
+    if ward.remaining > 0 and (ward.school == school or ward.school == "magic" and school ~= "physical") then
+      local used = min(ward.amount, amount)
+      ward.amount, amount, absorbed = ward.amount - used, amount - used, absorbed + used
+    end
+  end
+  local universal = min(side.absorb, amount)
+  side.absorb = side.absorb - universal
+  return amount - universal, absorbed + universal
+end
+
+local function totalAbsorb(side)
+  local value = side.absorb
+  for _, ward in ipairs(side.scopedAbsorbs or {}) do if ward.remaining > 0 then value = value + ward.amount end end
+  return value
 end
 
 local function bankLimit(side, cap)
@@ -195,12 +211,17 @@ local function bankLimit(side, cap)
 end
 
 local function itemStat(side, it, stat)
+  local activation = side.itemActivation
+  if activation and activation.item == it and activation.snapshot and activation.snapshot[stat] ~= nil then
+    return activation.snapshot[stat]
+  end
   local value = ownerStat(side, stat)
   for _, buff in ipairs(side.buffs) do
     local paid = not buff.paidOnly or side.itemActivation and side.itemActivation.item == it
       and side.itemActivation.paidBuffs and side.itemActivation.paidBuffs[buff]
-    if buff.stat == stat and buff.itemMatch and Util.MatchDef(it.def, buff.itemMatch)
-      and (not buff.itemUids or buff.itemUids[it.uid]) and paid then
+    if buff.stat == stat and not (stat == "dmgPct" and buff.damageSchool) and buff.itemMatch and Util.MatchDef(it.def, buff.itemMatch)
+      and (not buff.itemUids or buff.itemUids[it.uid]) and paid
+      and (not buff.free or side.itemActivation and side.itemActivation.freeBuff == buff) then
       local amount = buff.paidOnly and paid.value or buff.value
       if buff.missingHealth then amount = amount * max(0, 1 - side.hp / side.hpMax) end
       value = value + amount
@@ -211,6 +232,21 @@ end
 
 local function cooldownSpeed(side, it)
   return max(0.25, 1 + (itemStat(side, it, "haste") + it.mods.haste) / 100)
+end
+
+local function activationCost(side, it)
+  local use = it.def.use
+  local cost = max(0, (use.cost or 0) + it.mods.costFlat + itemStat(side, it, "costFlat"))
+    * max(0, 1 + (it.mods.costPct + itemStat(side, it, "costPct")) / 100)
+  if cost > 0 and not use.spendAll then
+    for _, match in ipairs(side.freeMatches) do if Util.MatchDef(it.def, match) then return 0 end end
+    for _, buff in ipairs(side.buffs) do
+      if buff.free and (not buff.match or Util.MatchDef(it.def, buff.match)) and (not buff.itemUids or buff.itemUids[it.uid]) then
+        return 0, buff
+      end
+    end
+  end
+  return cost
 end
 
 local function newTrace(sim, parent)
@@ -244,15 +280,33 @@ local function pushCooldown(sim, side, it, t, paused, speed)
   pushEvent(sim, { t = t, side = side.id, uid = it.uid, type = "cooldown", cd = remaining, duration = it.cdMax / speed, paused = paused })
 end
 
+local function petAction(item)
+  return item.def.kind == "pet" or item.def.actor == "pet"
+end
+
 local function ownerOccupied(side)
-  return side.channel ~= nil or side.deferredReleasing == true
+  return side.channel ~= nil or side.preparation ~= nil or side.deferredReleasing == true
+end
+
+local function cancelPendingUses(sim, side, t, reason, preparationOnly)
+  for _, item in ipairs(side.items) do
+    local pending = item.pendingUse
+    if pending and (not preparationOnly or pending.preparation) then
+      item.pendingUse = nil
+      if side.preparation == pending then side.preparation = nil end
+      pushEvent(sim, { t = t, side = side.id, uid = item.uid,
+        type = pending.preparation and "channel" or "delayed", phase = "interrupt",
+        key = item.def.baseKey or item.def.key, reason = reason, target = side.id,
+        duration = pending.duration, startedAt = pending.startedAt, endsAt = pending.endsAt, preparation = pending.preparation })
+    end
+  end
 end
 
 local function advanceCooldown(sim, side, it, amount, t, clampReady)
   if side.stunUntil > t then return end
   local speed = cooldownSpeed(side, it)
   it.cd = it.cd - amount * speed
-  if clampReady or ownerOccupied(side) and it.def.kind ~= "pet" then it.cd = max(0, it.cd) end
+  if clampReady ~= false or ownerOccupied(side) and not petAction(it) then it.cd = max(0, it.cd) end
   if it.def.use then pushCooldown(sim, side, it, t, false, speed) end
 end
 
@@ -275,12 +329,6 @@ local function weaponAverage(def)
   return ((def.weaponMin or 0) + (def.weaponMax or 0)) / 2 / (def.use and def.use.cd or 2)
 end
 
-local function placementOrder(a, b)
-  if a.x ~= b.x then return a.x < b.x end
-  if a.y ~= b.y then return a.y < b.y end
-  if a.id ~= b.id then return a.id < b.id end
-  return (a.rot or 0) < (b.rot or 0)
-end
 
 local function buildSide(sim, id, fighter)
   local classDef = ns.GetClass(fighter.classKey)
@@ -307,7 +355,7 @@ local function buildSide(sim, id, fighter)
   local grid = fighter.grid
   local placements = {}
   for i, p in ipairs(grid.items) do placements[i] = p end
-  table.sort(placements, placementOrder)
+  table.sort(placements, Util.PlacementLess)
   for i, p in ipairs(placements) do
     local def = ns.Items[p.id]
     local it = {
@@ -375,6 +423,13 @@ local function buildSide(sim, id, fighter)
   side.provides.twohand = melee[1] and melee[1].def.hands == 2 or false
   local activeMelee = 0
   for _, weapon in ipairs(melee) do if activeWeapons[weapon] then activeMelee = activeMelee + 1 end end
+  side.weaponByType = {}
+  for _, weapon in ipairs(melee) do
+    if activeWeapons[weapon] and weapon.def.weaponType then
+      side.weaponByType[weapon.def.weaponType] = side.weaponByType[weapon.def.weaponType] or weapon
+      side.provides[weapon.def.weaponType] = true
+    end
+  end
   side.provides.dualwield = activeMelee == 2
   for _, weapons in ipairs({ melee, ranged }) do
     for _, it in ipairs(weapons) do
@@ -416,12 +471,24 @@ local function buildSide(sim, id, fighter)
         side.setCounts[def.set][def.key] = true
       end
       if def.double then side.doubleMatches[#side.doubleMatches + 1] = def.double end
+      if def.revive and (not side.revive or def.revive.health > side.revive.health) then
+        side.revive = def.revive
+      end
+      if def.lethalSave and not side.lethalSave then side.lethalSave = { config = def.lethalSave, item = it } end
       addStats(side.stats, def.stats)
-      -- Printed equipment stats only. Class bases, talents, sets, temporary
-      -- effects and ability buffs cannot amplify a gear-derived buff.
+
+
       if def.kind == "weapon" and activeWeapons[it] or def.kind == "shield" and it.equipped
         or def.kind == "armor" or def.kind == "ring" or def.kind == "trinket" or def.kind == "neck"
         or def.kind == "cloak" or def.kind == "relic" then addStats(side.gearStats, def.stats) end
+    end
+  end
+
+  for _, it in ipairs(side.items) do
+    if not it.suppressed then
+      for _, bonus in ipairs(it.def.gearBonuses or {}) do
+        side.stats[bonus.stat] = (side.stats[bonus.stat] or 0) + max(0, side.gearStats[bonus.gearStat] or 0) * bonus.coef
+      end
     end
   end
 
@@ -465,7 +532,7 @@ local function buildSide(sim, id, fighter)
       local other = side.byUid[placement.uid]
       if other and not other.suppressed then neighbors[#neighbors + 1] = placement end
     end
-    table.sort(neighbors, placementOrder)
+    table.sort(neighbors, Util.PlacementLess)
     it.neighbors = neighbors
   end
 
@@ -479,7 +546,7 @@ local function buildSide(sim, id, fighter)
       local other = side.byUid[placement.uid]
       if other and not other.suppressed then neighbors[#neighbors + 1] = placement end
     end
-    table.sort(neighbors, placementOrder)
+    table.sort(neighbors, Util.PlacementLess)
     return neighbors
   end
 
@@ -544,7 +611,7 @@ local function buildSide(sim, id, fighter)
       end
     end
     local bags = it.placement and not it.suppressed and grid:AdjacentBags(it.placement) or {}
-    table.sort(bags, placementOrder)
+    table.sort(bags, Util.PlacementLess)
     for _, bagP in ipairs(bags) do
       local bagDef = ns.Items[bagP.id]
       for _, rule in ipairs(bagDef.adjacency or {}) do
@@ -576,6 +643,13 @@ local function buildSide(sim, id, fighter)
   for _, it in ipairs(side.items) do
     local use = it.def.use
     if use then
+      for _, provider in ipairs(side.items) do
+        if not provider.suppressed then
+          for _, filter in ipairs(provider.def.blockUses or {}) do
+            if Util.MatchDef(it.def, filter) then it.enabled, it.reason = false, "blocked:" .. provider.def.key end
+          end
+        end
+      end
       local req = use.requires
       if req and it.enabled then
         local list = type(req) == "table" and req or { req }
@@ -623,6 +697,13 @@ local function buildSide(sim, id, fighter)
     it.cooldownSpeed = cooldownSpeed(side, it)
     it.cooldownPaused = false
   end
+  local suppressed, inactive = {}, {}
+  for _, it in ipairs(side.items) do
+    if it.suppressed then suppressed[it.uid] = true end
+    if it.statStick then inactive[it.uid] = true end
+  end
+  local coatings, conflicts = ns.ResolveCoatings(grid, suppressed, inactive)
+  for _, it in ipairs(side.items) do it.coatedWeapons, it.coatingConflicts = coatings[it.uid], conflicts[it.uid] end
   return side
 end
 
@@ -650,12 +731,31 @@ local function statusTick(sim, side, t)
 end
 
 local function expireBuffs(sim, side, dt, t)
+  local wards = side.scopedAbsorbs or {}
+  for index = #wards, 1, -1 do
+    local ward = wards[index]
+    ward.remaining = ward.remaining - dt
+    if ward.remaining <= 0 or ward.amount <= 0 then
+      table.remove(wards, index)
+      pushEvent(sim, { t = t, side = ward.srcSide, uid = ward.srcUid, type = "statusRemoved", kind = "buff", key = ward.key, target = side.id })
+    end
+  end
   local i = 1
   local hasteExpired = false
   while i <= #side.buffs do
     local b = side.buffs[i]
-    b.remaining = b.remaining - dt
-    if b.remaining <= 0 then
+    local periodic = b.periodic
+    if periodic and periodic.nextAt <= t + 1e-6 and periodic.nextAt <= periodic.endsAt + 1e-6 then
+      local source = sim.sides[b.srcSide]
+      local item = source and source.byUid[b.srcUid]
+      if item then
+        local enemy = sim.sides[source.id == "A" and "B" or "A"]
+        for _, effect in ipairs(periodic.effects) do applyEffect(sim, source, enemy, item, effect, t) end
+      end
+      periodic.nextAt = periodic.nextAt + periodic.every
+    end
+    b.remaining = b.expiresAt and max(0, b.expiresAt - t) or b.remaining - dt
+    if b.remaining <= 1e-6 then
       hasteExpired = hasteExpired or b.stat == "haste"
       table.remove(side.buffs, i)
     else i = i + 1 end
@@ -663,10 +763,34 @@ local function expireBuffs(sim, side, dt, t)
   if hasteExpired then syncCooldowns(sim, side, t) end
 end
 
-local function regen(side, dt)
+local function regen(sim, side, dt, t)
+  for _, control in ipairs(side.controls or {}) do
+    if control.healPctPerSecond and control.endsAt > t - dt then
+      control.nextHeal = control.nextHeal or control.startedAt + 1
+      if t + 1e-6 >= control.nextHeal and control.nextHeal <= control.endsAt + 1e-6 then
+        applyHealing(sim, side, nil, side.hpMax * control.healPctPerSecond, t, { key = control.sourceKey, noProcs = true })
+        control.nextHeal = control.nextHeal + 1
+      end
+    end
+  end
+  local borrowed = side.borrowedHealth
+  if borrowed and side.hp > 0 then
+    local loss = min(borrowed.remaining, borrowed.total * dt / borrowed.duration)
+    side.hp = side.hp - loss
+    borrowed.remaining, borrowed.elapsed = borrowed.remaining - loss, borrowed.elapsed + dt
+    borrowed.unreported = borrowed.unreported + loss
+    if borrowed.elapsed + 1e-6 >= borrowed.nextReport or borrowed.remaining <= 1e-6 then
+      pushEvent(sim, { t = t, side = side.id, uid = borrowed.uid, type = "healthSpent", amount = borrowed.unreported,
+        target = side.id, temporary = true })
+      borrowed.unreported, borrowed.nextReport = 0, borrowed.nextReport + 1
+    end
+    if borrowed.remaining <= 1e-6 then side.borrowedHealth = nil end
+    checkRevive(sim, side, t)
+  end
   for res, pool in pairs(side.res) do
     local rate = pool.regen
     if res == "mana" then rate = rate + ownerStat(side, "regen") - (side.stats.regen or 0) end
+    if res == "rage" then rate = rate + ownerStat(side, "rageRegen") end
     if rate > 0 then
       pool.cur = min(pool.max, pool.cur + rate * dt)
     end
@@ -675,14 +799,63 @@ end
 
 local function hasStatus(side, kind, key)
   for _, st in ipairs(side.statuses) do
-    if st.kind == kind and (not key or st.key == key) then return true end
+    if st.kind == kind and not st.directTicks and (not key or st.key == key) then return true end
   end
   return false
 end
 
+local function harmfulSourceDef(item, status)
+  local def, tags = item.def, item.def.tagSet
+  if not tags.spell or tags.curse or tags.poison or tags.disease or tags.bleed
+    or status.kind == "dot" and status.school == "physical" then return def end
+  if not item.harmfulDef then
+    item.harmfulDef = Util.ShallowCopy(def)
+    item.harmfulDef.tagSet = Util.ShallowCopy(tags)
+    item.harmfulDef.tagSet.magic = true
+  end
+  return item.harmfulDef
+end
+
+local function hasHarmfulTag(side, enemy, tag)
+  for _, list in ipairs({ side.statuses, side.buffs }) do
+    for _, status in ipairs(list) do
+      if (status.kind == "dot" or status.kind == "debuff") and not status.directTicks and (status.remaining or 0) > 0 then
+        local sourceSide = status.srcSide == side.id and side or enemy
+        local source = sourceSide and sourceSide.byUid[status.srcUid]
+        if source and (not tag or harmfulSourceDef(source, status).tagSet[tag]) then return true end
+      end
+    end
+  end
+  return false
+end
+
+local conditionMet
 local CONDITIONS = {
+  hasHarmful = function(side, enemy) return hasHarmfulTag(side, enemy) end,
+  readyStrike = function(side, enemy, t, _, _, source)
+    for _, candidate in ipairs(side.actOrder) do
+      local use = candidate.def.use
+      local remaining = candidate.cd
+      local step = side.timingStep
+      if step and step.t == t and not step.advanced[candidate] then remaining = remaining - step.dt * cooldownSpeed(side, candidate) end
+      if candidate ~= source and candidate.enabled and remaining <= 1e-6 and not candidate.pendingUse and not (use.once and candidate.fired > 0)
+        and Util.MatchDef(candidate.def, { kind = "ability", tag = "melee", anyTag = { "strike" }, damaging = "direct" })
+        and use.condition ~= "readyStrike" and conditionMet(use.condition, side, enemy, t, candidate) then
+        local cost = activationCost(side, candidate)
+        local claims = side.activationClaims or {}
+        local own = claims.items and claims.items[candidate]
+        local available = use.resource and side.res[use.resource] and side.res[use.resource].cur - (claims[use.resource] or 0) + (own and own[use.resource] or 0) or 0
+        if not use.resource or available >= cost then return true end
+      end
+    end
+    return false
+  end,
   dualwield = function(side) return side.provides.dualwield == true end,
   injured = function(side) return side.hp < side.hpMax * 0.9 end,
+  injuredOrHarmful = function(side, enemy)
+    return side.hp < side.hpMax * 0.9 or hasHarmfulTag(side, enemy)
+  end,
+  below75 = function(side) return side.hp < side.hpMax * 0.75 end,
   below50 = function(side) return side.hp < side.hpMax * 0.5 end,
   below35 = function(side) return side.hp < side.hpMax * 0.35 end,
   enemyBelow20 = function(_, enemy) return enemy.hp < enemy.hpMax * 0.2 end,
@@ -690,29 +863,85 @@ local CONDITIONS = {
   injuredWithHot = function(side) return side.hp < side.hpMax * 0.9 and hasStatus(side, "hot") end,
   enemyBleeding = function(_, enemy)
     for _, st in ipairs(enemy.statuses) do
-      if st.kind == "dot" and st.school == "physical" then return true end
+      if st.kind == "dot" and not st.directTicks and st.school == "physical" then return true end
     end
     return false
   end,
   enemyPoisoned = function(side, enemy)
     for _, st in ipairs(enemy.statuses) do
       local source = side.byUid[st.srcUid]
-      if st.kind == "dot" and st.srcSide == side.id and source and source.def.tagSet.poison then return true end
+      if st.kind == "dot" and not st.directTicks and st.srcSide == side.id and source and source.def.tagSet.poison then return true end
     end
     return false
   end,
   noAbsorb = function(side) return side.absorb <= 0 end,
   lowMana = function(side) return side.res.mana and side.res.mana.cur < side.res.mana.max * 0.3 end,
   hasDot = function(side) return hasStatus(side, "dot") end,
+  hasCurse = function(side, enemy) return hasHarmfulTag(side, enemy, "curse") end,
+  hasPoison = function(side, enemy) return hasHarmfulTag(side, enemy, "poison") end,
+  enemyHumanoid = function(_, enemy) return not (enemy.provides.catform or enemy.provides.bearform) end,
+  enemyMana = function(_, enemy) return enemy.res.mana and enemy.res.mana.cur > 0 or false end,
+  enemyBeneficialBuff = function(_, enemy)
+    for _, buff in ipairs(enemy.buffs) do if buff.kind ~= "debuff" and buff.value > 0 then return true end end
+    for _, ward in ipairs(enemy.scopedAbsorbs or {}) do if ward.remaining > 0 and ward.amount > 0 then return true end end
+    return false
+  end,
   enemyStunned = function(_, enemy, t) return enemy.stunUntil > t end,
 }
 
 local PREFIXED_CONDITIONS = {
+  hasHarmful = function(side, enemy, _, tags)
+    if not tags then return hasHarmfulTag(side, enemy) end
+    for tag in tags:gmatch("[%w_]+") do if hasHarmfulTag(side, enemy, tag) then return true end end
+    return false
+  end,
   resourceAtLeast = function(side, _, _, resource, minimum) return side.res[resource] and side.res[resource].cur >= minimum or false end,
+  resourceAtMost = function(side, _, _, resource, maximum) return side.res[resource] and side.res[resource].cur <= maximum or false end,
+  resourceIdle = function(side, _, t, resource, seconds)
+    return side.res[resource] ~= nil and t - ((side.lastResourceSpent or {})[resource] or 0) + 1e-6 >= seconds
+  end,
+  chargesAtLeast = function(side, _, _, key, minimum) return (side.banks[key] or 0) >= minimum end,
+  chargesAtMost = function(side, _, _, key, maximum) return (side.banks[key] or 0) <= maximum end,
+  owns = function(side, _, _, key)
+    for _, item in ipairs(side.items) do
+      if not item.suppressed and (item.def.baseKey or item.def.key) == key then return true end
+    end
+    return false
+  end,
   provides = function(side, _, _, flag) return side.provides[flag] == true end,
   enemyHas = function(_, enemy, _, key) return hasStatus(enemy, "dot", key) end,
+  enemyBuff = function(_, enemy, _, key)
+    for _, buff in ipairs(enemy.buffs) do if buff.key == key and buff.remaining > 0 then return true end end
+    return false
+  end,
   buff = function(side, _, _, key)
     for _, b in ipairs(side.buffs) do if b.key == key then return true end end
+    return false
+  end,
+  notBuff = function(side, _, _, key)
+    for _, b in ipairs(side.buffs) do if b.key == key and b.remaining > 0 then return false end end
+    return true
+  end,
+  buffNeeds = function(side, _, _, key, seconds)
+    for _, b in ipairs(side.buffs) do if b.key == key and b.remaining > seconds then return false end end
+    return true
+  end,
+  hotNeeds = function(side, _, _, key, seconds)
+    for _, st in ipairs(side.statuses) do
+      if st.kind == "hot" and st.key == key and (st.remaining or 0) > seconds then return false end
+    end
+    return true
+  end,
+  enemyNeeds = function(_, enemy, _, key, seconds)
+    for _, list in ipairs({ enemy.statuses, enemy.buffs }) do
+      for _, st in ipairs(list) do if st.key == key and (st.remaining or 0) > seconds then return false end end
+    end
+    return true
+  end,
+  enemyControlled = function(_, enemy, t, types)
+    for _, control in ipairs(enemy.controls or {}) do
+      if control.endsAt > t and ("," .. types .. ","):find("," .. control.controlType .. ",", 1, true) then return true end
+    end
     return false
   end,
 }
@@ -720,31 +949,56 @@ local PREFIXED_CONDITIONS = {
 local function parseCondition(cond)
   if type(cond) ~= "string" then return nil end
   if CONDITIONS[cond] then return CONDITIONS[cond] end
-  local resource, minimum = cond:match("^resourceAtLeast:([^:]+):([%d%.]+)$")
+  local maintenance, key, seconds = cond:match("^(%a+):([^:]+):([%d%.]+)$")
+  if maintenance == "buffNeeds" or maintenance == "hotNeeds" or maintenance == "enemyNeeds" then
+    seconds = tonumber(seconds)
+    if seconds and seconds <= Sim.MAX_TIME then return PREFIXED_CONDITIONS[maintenance], key, seconds end
+    return nil
+  end
+  local resourceMode, resource, minimum = cond:match("^(%a+):([^:]+):([%d%.]+)$")
   if resource then
     minimum = tonumber(minimum)
-    if minimum then return PREFIXED_CONDITIONS.resourceAtLeast, resource, minimum end
+    if minimum and (resourceMode == "resourceAtLeast" or resourceMode == "resourceAtMost" or resourceMode == "resourceIdle"
+      or resourceMode == "chargesAtLeast" or resourceMode == "chargesAtMost") then return PREFIXED_CONDITIONS[resourceMode], resource, minimum end
     return nil
   end
   local prefix, arg = cond:match("^(%a+):(.+)$")
-  if prefix ~= "resourceAtLeast" and PREFIXED_CONDITIONS[prefix] then return PREFIXED_CONDITIONS[prefix], arg end
+  if prefix ~= "resourceAtLeast" and prefix ~= "resourceAtMost" and prefix ~= "resourceIdle" and prefix ~= "chargesAtLeast" and prefix ~= "chargesAtMost"
+    and prefix ~= "buffNeeds" and prefix ~= "hotNeeds" and prefix ~= "enemyNeeds" and PREFIXED_CONDITIONS[prefix] then
+    return PREFIXED_CONDITIONS[prefix], arg
+  end
 end
 
 function Sim.ValidCondition(cond)
+  if type(cond) == "table" then
+    local count = #cond
+    if count < 1 or count > 4 then return false end
+    local entries = 0
+    for key, value in pairs(cond) do
+      entries = entries + 1
+      if type(key) ~= "number" or key ~= math.floor(key) or key < 1 or key > count
+        or type(value) ~= "string" or parseCondition(value) == nil then return false end
+    end
+    return entries == count
+  end
   return cond == nil or parseCondition(cond) ~= nil
 end
 
-local function conditionMet(cond, side, enemy, t)
+conditionMet = function(cond, side, enemy, t, source)
   if not cond then return true end
+  if type(cond) == "table" then
+    for _, entry in ipairs(cond) do if not conditionMet(entry, side, enemy, t, source) then return false end end
+    return true
+  end
   local check, a, b = parseCondition(cond)
   if not check then return true end
-  return check(side, enemy, t, a, b)
+  return check(side, enemy, t, a, b, source)
 end
 
-local applyEffect
 local runTriggers
 local fireItem
-local applyHealing
+local effectNeighbors
+local areaContainsSource
 local changeResource
 local reactToDamage
 local beginChannel, finishChannel, updateChannel, releaseDeferred, deferCast
@@ -767,8 +1021,9 @@ local function finishChain(sim, owner)
         if entry.deferredRelease then entry.side.deferredReleasing = nil end
         break
       end
-      if entry.side.stunUntil > entry.t or entry.side.channel or entry.side.deferredReleasing and not entry.deferredRelease then
-        if entry.item and (entry.deferredRelease or entry.deferDuringChannel and (entry.side.channel or entry.side.stunUntil > entry.t)) then deferCast(entry.side, entry) end
+      if entry.side.stunUntil > entry.t or (entry.side.channel or entry.side.preparation) and not (entry.item and petAction(entry.item))
+        or entry.side.deferredReleasing and not entry.deferredRelease then
+        if entry.item and (entry.deferredRelease or entry.deferDuringChannel and (entry.side.channel or entry.side.preparation or entry.side.stunUntil > entry.t)) then deferCast(entry.side, entry) end
         if entry.deferredRelease then entry.side.deferredReleasing = nil end
         break
       end
@@ -777,7 +1032,8 @@ local function finishChain(sim, owner)
       local previous = sim.trace
       sim.trace = newTrace(sim, entry.parentTrace)
       if entry.item then
-        if entry.item.enabled and (entry.ignoreCondition or conditionMet(entry.item.def.use.condition, entry.side, entry.enemy, entry.t)) then
+        if entry.item.enabled and not entry.item.pendingUse and not (entry.item.def.use.once and entry.item.fired > 0)
+          and (entry.ignoreCondition or conditionMet(entry.item.def.use.condition, entry.side, entry.enemy, entry.t)) then
           if entry.consumeCooldown then entry.item.cd = entry.item.cdMax end
           fireItem(sim, entry.side, entry.enemy, entry.item, entry.t, { points = 0, freeCast = true, caster = entry.source,
             masteryFollowup = entry.masteryFollowup, masteryName = entry.masteryName })
@@ -810,14 +1066,15 @@ end
 beginChannel = function(sim, side, enemy, it, t)
   local config = it.def.use.channel
   if not config or ownerOccupied(side) then return end
-  local channel = { uid = it.uid, key = config.key or it.def.baseKey or it.def.key, target = enemy.id,
+  local channel = { uid = it.uid, key = config.key or it.def.baseKey or it.def.key, target = config.self and side.id or enemy.id,
+    kind = config.kind or "dot",
     startedAt = t, endsAt = t + config.duration, duration = config.duration, starting = true }
   side.channel = channel
   for _, target in ipairs(side.actOrder) do
-    if target.def.kind ~= "pet" then target.cd = max(0, target.cd) end
+    if not petAction(target) then target.cd = max(0, target.cd) end
   end
   pushEvent(sim, { t = t, side = side.id, uid = it.uid, type = "channel", phase = "start", key = channel.key,
-    target = enemy.id, duration = channel.duration, startedAt = t, endsAt = channel.endsAt })
+    target = channel.target, duration = channel.duration, startedAt = t, endsAt = channel.endsAt })
   return channel
 end
 
@@ -827,25 +1084,32 @@ finishChannel = function(sim, side, t, phase, reason)
   side.channel = nil
   local holder = sim.sides[channel.target]
   if holder then
-    for index = #holder.statuses, 1, -1 do
-      local status = holder.statuses[index]
-      if status.kind == "dot" and status.key == channel.key and status.srcSide == side.id and status.srcUid == channel.uid then
-        table.remove(holder.statuses, index)
-        pushEvent(sim, { t = t, side = side.id, uid = channel.uid, type = "statusRemoved", kind = "dot", key = channel.key, target = holder.id })
+    local statuses = channel.kind == "buff" and holder.buffs or holder.statuses
+    for index = #statuses, 1, -1 do
+      local status = statuses[index]
+      if status.kind == channel.kind and status.key == channel.key and status.srcSide == side.id and status.srcUid == channel.uid then
+        table.remove(statuses, index)
+        pushEvent(sim, { t = t, side = side.id, uid = channel.uid, type = "statusRemoved", kind = channel.kind, key = channel.key, target = holder.id })
       end
     end
   end
   pushEvent(sim, { t = t, side = side.id, uid = channel.uid, type = "channel", phase = phase, key = channel.key,
     target = channel.target, duration = channel.duration, startedAt = channel.startedAt, endsAt = channel.endsAt, reason = reason })
+  if phase == "end" and not reason and t + 1e-6 >= channel.endsAt and channel.useContext and side.hp > 0 then
+    local enemy = sim.sides[side.id == "A" and "B" or "A"]
+    if enemy.hp > 0 then runTriggers(sim, side, enemy, nil, "channelComplete", t, channel.useContext) end
+  end
 end
 
 updateChannel = function(sim, side, t)
   local channel = side.channel
   if not channel or channel.starting then return end
+  if channel.kind == "buff" and t + 1e-6 >= channel.endsAt then finishChannel(sim, side, t, "end") return end
   local holder = sim.sides[channel.target]
-  for _, status in ipairs(holder and holder.statuses or {}) do
-    if status.kind == "dot" and status.key == channel.key and status.srcSide == side.id and status.srcUid == channel.uid then
-      if t + 1e-6 >= channel.endsAt and status.nextTick > channel.endsAt + 1e-6 then finishChannel(sim, side, t, "end") end
+  local statuses = holder and (channel.kind == "buff" and holder.buffs or holder.statuses) or {}
+  for _, status in ipairs(statuses) do
+    if status.kind == channel.kind and status.key == channel.key and status.srcSide == side.id and status.srcUid == channel.uid then
+      if status.nextTick and t + 1e-6 >= channel.endsAt and status.nextTick > channel.endsAt + 1e-6 then finishChannel(sim, side, t, "end") end
       return
     end
   end
@@ -879,9 +1143,9 @@ local function masteryEvent(sim, side, enemy, event, it, t, ctx)
     return progress >= count
   end
   local function cast(key, name, preferred)
-    if side.stunUntil > t or ownerOccupied(side) then return false end
+    if side.stunUntil > t then return false end
     for _, target in ipairs(preferred and { preferred } or side.items) do
-      if target.enabled and target.def.use and (target.def.baseKey or target.def.key) == key
+      if target.enabled and target.def.use and (not ownerOccupied(side) or petAction(target)) and (target.def.baseKey or target.def.key) == key
         and conditionMet(target.def.use.condition, side, enemy, t) then
         local owner = beginChain(sim)
         sim.chain.pending[#sim.chain.pending + 1] = { side = side, enemy = enemy, item = target, source = it, count = 1, t = t,
@@ -896,6 +1160,8 @@ local function masteryEvent(sim, side, enemy, event, it, t, ctx)
     if (points.surv or 0) >= 8 and every("surv_dodge", 3) then cast("raptor_strike", "Survival") end
   elseif not it then return
   elseif event == "hit" then
+    if (points.mm or 0) >= 8 and ctx.regularAttack == true and it.def.kind == "weapon"
+      and ns.IsRangedWeapon(it.def) and every("mm_weapon", 8) then advanceCooldown(sim, side, it, 1, t, true) end
     local meleeAuto = ctx.autoAttack ~= false and it.def.kind == "weapon" and it.def.tagSet.melee and it.def.tagSet.autoattack
     if meleeAuto then
       if (points.fury or 0) >= 5 then
@@ -911,7 +1177,11 @@ local function masteryEvent(sim, side, enemy, event, it, t, ctx)
     end
     if ctx.crit then
       if spec == "mm" and it.def.tagSet.shot and (points.mm or 0) >= 5 then changeResource(sim, side, enemy, it, "mana", 5, t) end
-      if spec == "balance" and it.def.tagSet.spell and (points.balance or 0) >= 5 then advance("starfire", 1) end
+      if spec == "balance" and it.def.tagSet.spell and (points.balance or 0) >= 5
+        and t >= (side.mastery.balanceCritReady or 0) then
+        side.mastery.balanceCritReady = t + 1
+        advance(family, 1, true)
+      end
       if spec == "feral" and it.def.kind == "ability" and not ctx.freeCast and (points.feral or 0) >= 8 then
         for _, target in ipairs(side.actOrder) do
           if target.enabled and target.def.replacesWeapon and not target.noAct then advance(target.def.baseKey or target.def.key, 1, true) break end
@@ -933,7 +1203,8 @@ local function masteryEvent(sim, side, enemy, event, it, t, ctx)
     end
     if not ctx.freeCast then
       if spec == "mm" and it.def.tagSet.shot and (points.mm or 0) >= 8 and every("mm", 3) then cast("aimed_shot", "Marksmanship") end
-      if spec == "balance" and it.def.tagSet.spell and (points.balance or 0) >= 8 and every("balance", 3) then advance("starfire", 4) end
+      if spec == "balance" and it.def.tagSet.spell and (points.balance or 0) >= 8 and (ctx.spent or 0) > 0
+        and every("balance", 3) then advance(family, 4, true) end
     end
     if spec == "surv" and it.def.tagSet.trap and (points.surv or 0) >= 8 then cast("serpent_sting", "Survival") end
     if spec == "feral" and (points.feral or 0) >= 5 then
@@ -965,16 +1236,42 @@ local function checkLowHealth(sim, side, enemy, t)
   end
 end
 
-checkRevive = function(sim, side, t)
-  if side.hp <= 0 and side.flags.revive and not side.revived then
+checkRevive = function(sim, side, t, incomingDamage)
+  if side.hp <= 0 and incomingDamage and side.lethalSave and not side.lethalSaveUsed then
+    local saved = side.lethalSave
+    side.lethalSaveUsed = true
+    side.hp = max(1, Util.Round(side.hpMax * saved.config.health))
+    side.borrowedHealth = { total = side.hp, remaining = side.hp, duration = saved.config.duration,
+      elapsed = 0, nextReport = 1, unreported = 0, uid = saved.item.uid }
+    side.healDone, saved.item.heal = side.healDone + side.hp, saved.item.heal + side.hp
+    pushEvent(sim, { t = t, side = side.id, uid = saved.item.uid, type = "heal", amount = side.hp, target = side.id,
+      lethalSave = true, temporary = true })
+    local enemy = sim.sides[side.id == "A" and "B" or "A"]
+    for _, effect in ipairs(saved.config.effects or {}) do applyEffect(sim, side, enemy, saved.item, effect, t) end
+    return
+  end
+  if side.hp <= 0 and (side.flags.revive or side.revive) and not side.revived then
     local previous = sim.trace
     sim.trace = newTrace(sim, previous)
     side.revived = true
-    side.hp = side.hpMax
+    cancelPendingUses(sim, side, t, "revive")
+    local partial = not side.flags.revive and side.revive
+    side.hp = partial and max(1, Util.Round(side.hpMax * partial.health)) or side.hpMax
+    if partial then
+      finishChannel(sim, side, t, "interrupt", "revive")
+      side.deferredCast, side.controls, side.stunUntil = nil, {}, t
+      if partial.mana and side.res.mana then
+        side.res.mana.cur = Util.Round(side.res.mana.max * partial.mana)
+        pushEvent(sim, { t = t, side = side.id, type = "resourceReset", resource = "mana", value = side.res.mana.cur, target = side.id })
+      end
+      syncCooldowns(sim, side, t)
+    end
     side.below40Fired = false
+    side.borrowedHealth = nil
     side.absorb = 0
+    side.scopedAbsorbs = {}
     side.statuses = {}
-    pushEvent(sim, { t = t, side = side.id, type = "heal", amount = side.hpMax, target = side.id, revive = true })
+    pushEvent(sim, { t = t, side = side.id, type = "heal", amount = side.hp, target = side.id, revive = true })
     pushEvent(sim, { t = t, side = side.id, type = "revive", target = side.id })
     sim.trace = previous
   end
@@ -993,6 +1290,25 @@ local function attackRange(it, e)
   return "melee"
 end
 
+local function scopedOutgoingMultiplier(side, it, school)
+  local activation = side.itemActivation
+  if activation and activation.item == it and activation.schools then return activation.schools[school] or 1 end
+  local multiplier, strongest = 1, {}
+  for _, buff in ipairs(side.buffs) do
+    if buff.stat == "dmgPct" and buff.damageSchool
+      and (buff.damageSchool == school or buff.damageSchool == "magic" and school ~= "physical")
+      and (not buff.itemMatch or Util.MatchDef(it.def, buff.itemMatch) and (not buff.itemUids or buff.itemUids[it.uid])) then
+      if buff.exclusiveGroup and buff.value < 0 then
+        strongest[buff.exclusiveGroup] = min(strongest[buff.exclusiveGroup] or 0, buff.value)
+      else
+        multiplier = multiplier * max(0, 1 + buff.value / 100)
+      end
+    end
+  end
+  for _, value in pairs(strongest) do multiplier = multiplier * max(0, 1 + value / 100) end
+  return multiplier
+end
+
 local function damageMultiplier(side, it, e)
   local mult = 1 + (itemStat(side, it, "dmgPct") + it.mods.dmgPct) / 100
   if side.classKey == "SHAMAN" and e.weaponSelf and it.def.kind == "weapon" and not ns.IsRangedWeapon(it.def) then
@@ -1006,7 +1322,7 @@ local function damageMultiplier(side, it, e)
   else
     mult = mult + itemStat(side, it, "spellPct") / 100
   end
-  return max(0, mult)
+  return max(0, mult) * scopedOutgoingMultiplier(side, it, e.school or "physical")
 end
 
 local function healingPenalty(side, it)
@@ -1035,10 +1351,20 @@ applyHealing = traced(function(sim, side, it, amount, t, options)
   if side.hp >= side.hpMax * 0.4 then side.below40Fired = false end
   side.healDone = side.healDone + healed
   if it then it.heal = it.heal + healed end
+  if sim.audit and it then
+    local own = sim.audit[side.id]
+    own.healing = own.healing or {}
+    local entry = own.healing[it.uid] or { attempted = 0, effective = 0, overheal = 0 }
+    own.healing[it.uid] = entry
+    entry.attempted, entry.effective, entry.overheal = entry.attempted + amount, entry.effective + healed, entry.overheal + amount - healed
+  end
   pushEvent(sim, { t = t, side = side.id, uid = it and it.uid, type = options.hot and "hot" or "heal", amount = healed,
-    crit = options.crit, key = options.key, target = side.id, lifesteal = options.lifesteal })
+    crit = options.crit, key = options.key, target = side.id, lifesteal = options.lifesteal,
+    attempted = amount, overheal = amount - healed })
+  if options.noProcs then return healed end
   local enemy = sim.sides[side.id == "A" and "B" or "A"] or side
-  local ctx = { amount = healed, source = it, healing = true, crit = options.crit }
+  local ctx = { amount = healed, source = it, healing = true, crit = options.crit,
+    activationId = options.activationId, spent = options.spent, paidResource = options.paidResource, freeCast = options.freeCast }
   masteryEvent(sim, side, enemy, "healed", it, t, { amount = healed, hot = options.hot })
   if healed > 0 then runTriggers(sim, side, enemy, nil, "healed", t, ctx) end
   if options.hot then runTriggers(sim, side, enemy, nil, "hotTick", t, ctx) end
@@ -1062,6 +1388,10 @@ changeResource = traced(function(sim, side, enemy, it, resource, amount, t)
   local overflow = max(0, before + max(0, amount) - pool.max)
   pool.cur = Util.Clamp(before + amount, 0, pool.max)
   local actual = pool.cur - before
+  if actual < 0 and it then
+    side.lastResourceSpent = side.lastResourceSpent or {}
+    side.lastResourceSpent[resource] = t
+  end
   if sim.audit then
     local flows = sim.audit[side.id].flows
     local flow = flows[resource] or { gained = 0, spent = 0, overflow = 0 }
@@ -1092,7 +1422,7 @@ local function statusMatches(side, st, filter)
   if not filter then return true end
   if filter.tag == "bleed" and st.school == "physical" then return true end
   local source = side.byUid[st.srcUid]
-  return source and Util.MatchDef(source.def, filter) or false
+  return source and Util.MatchDef(harmfulSourceDef(source, st), filter) or false
 end
 
 local function stackIncrement(effect, ctx)
@@ -1128,7 +1458,7 @@ local function consumeDots(sim, side, enemy, rule, t)
   local total = 0
   for i = #enemy.statuses, 1, -1 do
     local st = enemy.statuses[i]
-    if st.kind == "dot" and st.srcSide == side.id and st.remaining > 0 and statusMatches(side, st, rule.match) then
+    if st.kind == "dot" and not st.drainResource and not st.directTicks and st.srcSide == side.id and st.remaining > 0 and statusMatches(side, st, rule.match) then
       local remaining = max(0, st.pool or remainingDotDamage(st))
       local taken = remaining * fraction
       total = total + taken
@@ -1154,12 +1484,14 @@ local dealDamage = traced(function(sim, side, enemy, it, e, t, ctx)
   local autoAttack = it.def.tagSet.autoattack and (not ctx or ctx.autoAttack ~= false) or false
   local rng = sim.rng
   local school = e.school or "physical"
+  if scopedOutgoingMultiplier(side, it, school) <= 0 then return 0 end
   local base = 0
   if e.min then base = rng:Range(e.min, e.max or e.min) end
   if e.weaponSelf then
     base = base + rng:Range(it.def.weaponMin or 1, it.def.weaponMax or 1)
   elseif e.weapon then
-    local w = e.ranged and side.weaponRanged or side.weaponMelee
+    local w = e.weaponType and side.weaponByType[e.weaponType] or e.ranged and side.weaponRanged or side.weaponMelee
+    if e.weaponType and not side.weaponByType[e.weaponType] then return 0 end
     if w then base = base + rng:Range(w.def.weaponMin or 1, w.def.weaponMax or 1) * (e.weaponPct or 1) end
   end
   if e.fromEvent then base = base + (ctx and ctx.amount or 0) * e.fromEvent end
@@ -1194,21 +1526,24 @@ local dealDamage = traced(function(sim, side, enemy, it, e, t, ctx)
     and autoAttack and ctx and ctx.extraAttack and ctx.bonusAttackPowerPct then
     stat = stat * (1 + ctx.bonusAttackPowerPct / 100)
   end
-  local amount = (base + (e.coef or 0) * stat) * damageMultiplier(side, it, e) + it.mods.flat
+  local offense = ctx and ctx.directOffense
+  local multiplier = offense and offense.multiplier or damageMultiplier(side, it, e)
+  local amount = (base + (e.coef or 0) * stat) * multiplier + it.mods.flat
   if e.weaponSelf and it.def.kind == "weapon" and it.def.tagSet.melee and side.provides.dualwield and side.weaponMelee ~= it then amount = amount * 0.5 end
   if e.blockScale then amount = amount + e.blockScale * ownerStat(side, "block") end
   if e.scaleMissing then amount = amount * (1 + e.scaleMissing * (1 - enemy.hp / enemy.hpMax)) end
   if e.perStatus then
     local n = 0
-    for _, st in ipairs(enemy.statuses) do if st.kind == "dot" then n = n + 1 end end
+    for _, st in ipairs(enemy.statuses) do if st.kind == "dot" and not st.drainResource and not st.directTicks then n = n + 1 end end
     amount = amount * (1 + e.perStatus * n)
   end
   if e.perCombo and ctx and ctx.points then amount = amount * (1 + e.perCombo * ctx.points) end
+  if e.multIf and conditionMet(e.multIf.condition, side, enemy, t) then amount = amount * e.multIf.mult end
   amount = max(0, amount * ammoEffectScale(it))
 
   local range = attackRange(it, e)
   if school == "physical" and not e.noDodge then
-    if rng:Chance(Sim.DodgeChance(ownerStat(enemy, "dodge"))) then
+    if rng:Chance(max(0, Sim.DodgeChance(ownerStat(enemy, "dodge")) - itemStat(side, it, "dodgeIgnore"))) then
       pushEvent(sim, { t = t, side = side.id, uid = it.uid, type = "dodge", target = enemy.id })
       runTriggers(sim, side, enemy, nil, "targetDodged", t, { source = it, attacker = it, autoAttack = autoAttack })
       runTriggers(sim, enemy, side, nil, "dodged", t, { source = it, attacker = it, autoAttack = autoAttack })
@@ -1218,15 +1553,53 @@ local dealDamage = traced(function(sim, side, enemy, it, e, t, ctx)
   end
 
   if ctx then ctx.landed = true end
-  local critChance = Sim.CritChance(itemStat(side, it, "crit") + it.mods.crit + (e.critBonus or 0))
+  local critChance = Sim.CritChance((offense and offense.crit or itemStat(side, it, "crit") + it.mods.crit) + (e.critBonus or 0))
   if e.critIf and conditionMet(e.critIf, side, enemy, t) then critChance = 100 end
   local crit = not e.noCrit and rng:Chance(critChance)
-  if crit then amount = amount * (school == "physical" and 2 or 1.5) * max(0, 1 + (itemStat(side, it, "critDamage") + (it.masteryCritDamage or 0)) / 100) end
+  if crit then
+    local bonus = offense and offense.critDamage or itemStat(side, it, "critDamage") + (it.masteryCritDamage or 0)
+    amount = amount * (school == "physical" and 2 or 1.5) * max(0, 1 + bonus / 100)
+  end
   local criticalShare = crit and 1 or 0
   if e.consumeDots then
     local direct = amount
     amount = amount + consumeDots(sim, side, enemy, e.consumeDots, t)
     criticalShare = crit and amount > 0 and direct / amount or 0
+  end
+
+  if ctx.reflected then amount, crit, criticalShare = ctx.amount, ctx.originalCrit or false, 0 end
+  if not ctx.reflected and not autoAttack and amount > 0 and school ~= "physical" and it.def.tagSet.spell then
+    for _, interceptor in ipairs(enemy.items) do
+      local rule = interceptor.def.spellIntercept
+      if not interceptor.suppressed and (interceptor.enabled or not interceptor.def.use) and rule and (interceptor.interceptReady or 0) <= t then
+        interceptor.interceptReady = t + rule.cooldown
+        interceptor.procs = (interceptor.procs or 0) + 1
+        local reduction = ownerStat(enemy, "dr") + scopedDamageReduction(enemy, school, e.ranged)
+        pushEvent(sim, { t = t, side = enemy.id, uid = interceptor.uid, type = "ground",
+          amount = Util.Round(amount * (1 - min(0.9, reduction / 100))), school = school, target = enemy.id })
+        return 0
+      end
+    end
+  end
+  if not ctx.reflected and amount > 0 and school ~= "physical" then
+    for _, ward in ipairs(enemy.scopedAbsorbs or {}) do
+      if ward.remaining > 0 and ward.amount > 0 and (ward.school == school or ward.school == "magic") then
+        for _, reflector in ipairs(enemy.items) do
+          local rule = reflector.def.wardReflection
+          if not reflector.suppressed and rule and rule.key == ward.key and (rule.school == school or rule.school == "magic") then
+            ward.reflections = ward.reflections or {}
+            if (ward.reflections[reflector.uid] or 0) < rule.charges and rng:Chance(rule.chance) then
+              ward.reflections[reflector.uid] = (ward.reflections[reflector.uid] or 0) + 1
+              reflector.procs = (reflector.procs or 0) + 1
+              pushEvent(sim, { t = t, side = enemy.id, uid = reflector.uid, type = "reflect", amount = Util.Round(amount), school = school, target = side.id })
+              applyEffect(sim, enemy, side, reflector, { type = "damage", school = school, noCrit = true, noDodge = true, noOwnTriggers = true }, t,
+                { reflected = true, amount = amount, originalCrit = crit })
+              return 0
+            end
+          end
+        end
+      end
+    end
   end
 
   local armorPrevented = 0
@@ -1239,7 +1612,28 @@ local dealDamage = traced(function(sim, side, enemy, it, e, t, ctx)
       local blocked = min(amount * 0.5, ownerStat(enemy, "block"))
       amount = amount - blocked
       pushEvent(sim, { t = t, side = enemy.id, type = "block", amount = Util.Round(blocked), target = enemy.id })
-      if blocked > 0 then runTriggers(sim, enemy, side, nil, "block", t, { amount = blocked, attacker = it, source = it, autoAttack = autoAttack }) end
+      if blocked > 0 then
+        local charged = {}
+        for _, buff in ipairs(enemy.buffs) do
+          if buff.consumeOn == "block" then charged[#charged + 1] = { buff = buff, version = buff.chargeVersion } end
+        end
+        runTriggers(sim, enemy, side, nil, "block", t, { amount = blocked, attacker = it, source = it, autoAttack = autoAttack })
+        for _, entry in ipairs(charged) do
+          local buff = entry.buff
+          local index = indexOf(enemy.buffs, buff)
+          if index and buff.chargeVersion == entry.version then
+            buff.charges = buff.charges - 1
+            if buff.charges <= 0 then
+              table.remove(enemy.buffs, index)
+              pushEvent(sim, { t = t, side = buff.srcSide, uid = buff.srcUid, type = "statusRemoved", key = buff.key, kind = buff.kind, target = enemy.id })
+            else
+              pushEvent(sim, { t = t, side = buff.srcSide, uid = buff.srcUid, type = "buff", key = buff.key,
+                stat = buff.stat, value = buff.value, charges = buff.charges, duration = buff.remaining,
+                icon = buff.icon, name = buff.name, target = enemy.id, refresh = true })
+            end
+          end
+        end
+      end
       if blocked > 0 and (enemy.talents and enemy.talents.prot or 0) >= 5 then changeResource(sim, enemy, side, enemy.shield, "rage", 3, t) end
     end
   end
@@ -1255,10 +1649,10 @@ local dealDamage = traced(function(sim, side, enemy, it, e, t, ctx)
   if ctx and ctx.extraAttack then it.extraHits = (it.extraHits or 0) + 1 end
   pushEvent(sim, { t = t, side = side.id, uid = it.uid, type = "damage", amount = amount, absorbed = absorbed, crit = crit, school = school, target = enemy.id,
     extraAttack = ctx and ctx.extraAttack or nil, autoAttack = autoAttack })
-  checkRevive(sim, enemy, t)
+  checkRevive(sim, enemy, t, true)
   if absorbedDamage > 0 then runTriggers(sim, enemy, side, nil, "absorbed", t, { amount = absorbedDamage, source = it, attacker = it, school = school, autoAttack = autoAttack }) end
 
-  local lifesteal = ownerStat(side, "lifesteal")
+  local lifesteal = ctx.reflected and 0 or ownerStat(side, "lifesteal")
   if lifesteal > 0 and amount > 0 then
     applyHealing(sim, side, it, amount * lifesteal / 100, t, { lifesteal = true })
   end
@@ -1276,7 +1670,7 @@ local dealDamage = traced(function(sim, side, enemy, it, e, t, ctx)
       sourceSide = side.id, sourceUid = it.uid })
     runTriggers(sim, enemy, side, nil, "armorPrevented", t, { amount = armorPrevented, source = it, attacker = it, autoAttack = autoAttack })
   end
-  if amount > 0 then reactToDamage(sim, enemy, side, t) end
+  if amount > 0 then reactToDamage(sim, enemy, side, t, amount) end
   if ctx and ctx.regularAttack and not (sim.chain and sim.chain.extraAttack) then
     runTriggers(sim, side, enemy, nil, "regularHit", t, { source = it, amount = amount, crit = crit, autoAttack = autoAttack })
   end
@@ -1291,39 +1685,53 @@ local dealDamage = traced(function(sim, side, enemy, it, e, t, ctx)
       side.dmgTaken = side.dmgTaken + thorns
       enemy.dmgDone = enemy.dmgDone + thorns
       pushEvent(sim, { t = t, side = enemy.id, type = "thorns", amount = thorns, school = "nature", target = side.id })
-      checkRevive(sim, side, t)
-      if thorns > 0 then reactToDamage(sim, side, enemy, t) end
+      checkRevive(sim, side, t, true)
+      if thorns > 0 then reactToDamage(sim, side, enemy, t, thorns) end
       checkLowHealth(sim, side, enemy, t)
     end
   end
 
   local hitContext = { source = it, amount = amount, criticalDamage = amount * criticalShare, crit = crit, autoAttack = autoAttack, healing = false,
-    activationId = ctx.activationId, caster = ctx.caster }
+    activationId = ctx.activationId, caster = ctx.caster, spent = ctx.spent, comboSpent = ctx.comboSpent,
+    paidResource = ctx.paidResource, freeCast = ctx.freeCast, regularAttack = ctx.regularAttack }
   if not e.noOwnTriggers then
     runTriggers(sim, side, enemy, it, "hit", t, hitContext)
     if crit then runTriggers(sim, side, enemy, it, "crit", t, hitContext) end
   end
-  for _, other in ipairs(side.items) do
-    if other ~= it and (other.enabled or other.def.passiveTriggers) then
-      runTriggers(sim, side, enemy, other, "anyHit", t, hitContext)
-      if crit then runTriggers(sim, side, enemy, other, "anyCrit", t, hitContext) end
+  if not ctx.reflected then
+    for _, other in ipairs(side.items) do
+      if other ~= it and (other.enabled or other.def.passiveTriggers) then
+        runTriggers(sim, side, enemy, other, "anyHit", t, hitContext)
+        if crit then runTriggers(sim, side, enemy, other, "anyCrit", t, hitContext) end
+      end
     end
-  end
-  for _, np in ipairs(it.neighbors or {}) do
-    local n = side.byUid[np.uid]
-    if n then
-      runTriggers(sim, side, enemy, n, "adjacentHit", t, hitContext)
-      if crit then runTriggers(sim, side, enemy, n, "adjacentCrit", t, hitContext) end
+    for _, np in ipairs(it.neighbors or {}) do
+      local n = side.byUid[np.uid]
+      if n then
+        runTriggers(sim, side, enemy, n, "adjacentHit", t, hitContext)
+        if crit then runTriggers(sim, side, enemy, n, "adjacentCrit", t, hitContext) end
+      end
     end
   end
   if amount > 0 then runTriggers(sim, enemy, side, nil, "damaged", t, { amount = amount, attacker = it, autoAttack = autoAttack, crit = crit }) end
   local masteryContext = Util.ShallowCopy(ctx or {})
   masteryContext.crit = crit
   masteryContext.autoAttack = autoAttack
-  masteryEvent(sim, side, enemy, "hit", it, t, masteryContext)
+  if not ctx.reflected then masteryEvent(sim, side, enemy, "hit", it, t, masteryContext) end
   checkLowHealth(sim, enemy, side, t)
   return amount
 end)
+
+local function consumableHot(side, it, effect)
+  local selection, selected = effect.consumeHots, nil
+  for index, st in ipairs(side.statuses) do
+    local source = side.byUid[st.srcUid]
+    if st.kind == "hot" and st.srcSide == side.id and source and not (source.def.use and source.def.use.channel)
+      and Util.MatchDef(source.def, selection.match) and areaContainsSource(side, it, effect, st.srcUid)
+      and (not selected or st.remaining < side.statuses[selected].remaining) then selected = index end
+  end
+  return selected
+end
 
 local heal = traced(function(sim, side, it, e, t, ctx)
   if e.fixedFraction then
@@ -1335,10 +1743,12 @@ local heal = traced(function(sim, side, it, e, t, ctx)
   if e.perPoint then base = base + (ctx and ctx.points or 0) * e.perPoint end
   local consumed = 0
   if e.consumeHots then
+    local selection = type(e.consumeHots) == "table" and e.consumeHots or nil
+    local selected = selection and consumableHot(side, it, e)
     for i = #side.statuses, 1, -1 do
       local st = side.statuses[i]
-      if st.kind == "hot" then
-        consumed = consumed + st.perTick * max(0, st.remaining)
+      if st.kind == "hot" and (not selection or i == selected) then
+        consumed = consumed + st.perTick * max(0, selection and selection.full and st.duration or st.remaining)
         pushEvent(sim, { t = t, side = side.id, uid = st.srcUid, type = "statusRemoved", key = st.key, kind = "hot", target = side.id })
         table.remove(side.statuses, i)
       end
@@ -1349,7 +1759,8 @@ local heal = traced(function(sim, side, it, e, t, ctx)
   local crit = not e.noCrit and sim.rng:Chance(Sim.CritChance(itemStat(side, it, "crit") + it.mods.crit))
   if crit then amount = amount * 1.5 end
   amount = amount + consumed
-  return applyHealing(sim, side, it, amount, t, { crit = crit })
+  return applyHealing(sim, side, it, amount, t, { crit = crit, activationId = ctx and ctx.activationId,
+    spent = ctx and ctx.spent, paidResource = ctx and ctx.paidResource, freeCast = ctx and ctx.freeCast })
 end)
 
 local function addStatus(sim, holder, srcSide, it, e, t, kind, ctx)
@@ -1357,15 +1768,23 @@ local function addStatus(sim, holder, srcSide, it, e, t, kind, ctx)
   local added = e.stack and stackIncrement(e, ctx) or 1
   if added <= 0 then return end
   local perTick
+
+
+  local directOffense = e.directTicks and {
+    multiplier = damageMultiplier(srcSide, it, e),
+    crit = itemStat(srcSide, it, "crit") + it.mods.crit,
+    critDamage = itemStat(srcSide, it, "critDamage") + (it.masteryCritDamage or 0),
+  } or nil
   if kind == "dot" then
     local school = e.school or "physical"
     local stat = itemStat(srcSide, it, e.powerStat or (school == "physical" and "ap" or "sp"))
-    perTick = ((e.tick or 0) + (e.coef or 0) * stat) * damageMultiplier(srcSide, it, e)
+    perTick = ((e.tick or 0) + (e.coef or 0) * stat) * ((e.drainResource or e.directTicks) and 1 or damageMultiplier(srcSide, it, e))
   else
     perTick = ((e.tick or 0) + (e.coef or 0) * itemStat(srcSide, it, e.powerStat or "healing")) * healingMultiplier(srcSide, it)
   end
   local incoming = (ctx and ctx.amount or 0) * (e.fromEvent or 0)
   if e.rolling then perTick = perTick + incoming / e.duration end
+  if kind == "hot" and e.fixedFraction then perTick = incoming / e.duration end
   if e.perCombo and ctx and ctx.points then perTick = perTick * (1 + e.perCombo * ctx.points) end
   if kind == "dot" then perTick = perTick * ammoEffectScale(it) end
   perTick = max(0, perTick)
@@ -1373,13 +1792,22 @@ local function addStatus(sim, holder, srcSide, it, e, t, kind, ctx)
     if st.kind == kind and st.key == key and st.srcSide == srcSide.id and st.srcUid == it.uid then
       local debt = (e.uncapped or e.decayStacks) and st.pool and max(0, remainingDotDamage(st) - st.pool) or 0
       st.remaining = e.duration
+      st.breakOnDamage = e.breakOnDamage
+      st.breakBudget = e.breakDamagePctMax and srcSide.hpMax * e.breakDamagePctMax or nil
+      st.drainResource = e.drainResource
+      st.transfer = e.transfer
+      st.directTicks = e.directTicks
+      st.directOffense = directOffense
+      st.directEffect = e.directTicks and { type = "damage", school = e.school, fromEvent = 1, noDodge = true,
+        noCrit = e.noCrit, critIf = e.critIf, critBonus = e.critBonus, noOwnTriggers = e.noOwnTriggers } or nil
       st.expiresAt = e.preserveTicks and t + e.duration or nil
-      if not e.rolling then st.pool = nil st.harvested = nil end
+      if not e.rolling then st.pool = e.finite and Util.Round(perTick * e.duration) or nil st.harvested = nil end
+      st.finite = e.finite
       st.rolling = e.rolling
       st.decayStacks, st.perStack = e.decayStacks, perTick
       st.rampStacks, st.rampEvery, st.maxStacks = e.rampStacks, max(1, floor(e.rampEvery or 1)), e.uncapped and math.huge or e.maxStacks or 5
       if e.rolling then
-        st.pool = max(0, st.pool or 0) + perTick * e.duration
+        st.pool = max(0, st.pool or 0) + (e.finite and Util.Round(perTick * e.duration) or perTick * e.duration)
         st.perTick = st.pool / e.duration
       elseif e.stack then
         if not e.preserveTicks then st.nextTick = t + 1 end
@@ -1410,27 +1838,76 @@ local function addStatus(sim, holder, srcSide, it, e, t, kind, ctx)
     rampStacks = e.rampStacks, rampEvery = max(1, floor(e.rampEvery or 1)), rampTicks = 0, maxStacks = e.uncapped and math.huge or e.maxStacks or 5,
     remaining = e.duration, duration = e.duration, nextTick = t + 1,
     srcSide = srcSide.id, srcUid = it.uid, stacks = stacks, icon = it.def.icon, name = it.def.name, rolling = e.rolling, activationId = ctx and ctx.activationId,
-    expiresAt = e.preserveTicks and t + e.duration or nil }
-  if e.rolling then st.pool = perTick * e.duration end
+    expiresAt = e.preserveTicks and t + e.duration or nil, breakOnDamage = e.breakOnDamage,
+    breakBudget = e.breakDamagePctMax and srcSide.hpMax * e.breakDamagePctMax or nil, drainResource = e.drainResource, transfer = e.transfer,
+    directTicks = e.directTicks, directOffense = directOffense, directEffect = e.directTicks and { type = "damage", school = e.school, fromEvent = 1, noDodge = true,
+      noCrit = e.noCrit, critIf = e.critIf, critBonus = e.critBonus, noOwnTriggers = e.noOwnTriggers } or nil }
+  st.finite = e.finite
+  if e.rolling or e.finite then st.pool = e.finite and Util.Round(perTick * e.duration) or perTick * e.duration end
   holder.statuses[#holder.statuses + 1] = st
   pushEvent(sim, { t = t, side = srcSide.id, uid = it.uid, type = "status", kind = kind, key = key, target = holder.id, stacks = stacks,
     duration = e.duration, icon = it.def.icon, name = it.def.name, school = e.school })
   return st
 end
 
+effectNeighbors = function(side, it, effect)
+  if not it or it.suppressed then return {} end
+  if not effect.area then return it.neighbors or {} end
+  if not it.placement then return {} end
+  local out = {}
+  for _, placement in ipairs(side.grid:EffectNeighbors(it.placement, effect.area)) do
+    local target = side.byUid[placement.uid]
+    if target and (target.enabled or target.def.passiveTriggers) and not target.suppressed then out[#out + 1] = placement end
+  end
+  table.sort(out, Util.PlacementLess)
+  return out
+end
+
+areaContainsSource = function(side, it, effect, uid)
+  if effect.target ~= "neighbors" then return true end
+  for _, placement in ipairs(effectNeighbors(side, it, effect)) do
+    if placement.uid == uid then return true end
+  end
+  return false
+end
+
 local function addBuff(sim, holder, srcSide, it, e, t, negative, ctx)
+  local duration = ((e.duration or 0) + (e.durationPerPoint or 0) * (ctx and ctx.points or 0))
+    * max(0, 1 + ((it and it.mods.durationPct or 0) + itemStat(srcSide, it, "durationPct")) / 100)
+  local linkedControl
+  if e.controlKey then
+    for _, control in ipairs(holder.controls or {}) do
+      if control.sourceKey == e.controlKey and control.srcSide == srcSide.id and control.endsAt > t then
+        if not linkedControl or control.endsAt > linkedControl.endsAt then linkedControl = control end
+      end
+    end
+    if not linkedControl then return end
+    duration = min(duration, linkedControl.endsAt - t)
+  end
   local key = e.key or (it and it.def.key or "buff") .. ":" .. tostring(e.stat)
+  local periodic = e.periodic and { every = e.periodic.every, nextAt = t + e.periodic.every,
+    endsAt = t + duration, effects = e.periodic.effects }
+  if e.anySource and e.charges == 0 then
+    for index = #holder.buffs, 1, -1 do
+      local buff = holder.buffs[index]
+      if buff.key == key and buff.srcSide == srcSide.id then
+        table.remove(holder.buffs, index)
+        pushEvent(sim, { t = t, side = buff.srcSide, uid = buff.srcUid, type = "statusRemoved", kind = buff.kind, key = key, target = holder.id })
+      end
+    end
+    return
+  end
   local added = e.stack and stackIncrement(e, ctx) or 1
   if added <= 0 then return end
   local srcUid = it and it.uid
   local itemMatch, itemUids = e.target and e.match or nil
   if e.target == "neighbors" then
     itemUids = {}
-    for _, neighbor in ipairs(it and it.neighbors or {}) do itemUids[neighbor.uid] = true end
+    for _, neighbor in ipairs(effectNeighbors(srcSide, it, e)) do itemUids[neighbor.uid] = true end
   end
   local gearValue = (e.gearCoef or 0) * max(0, srcSide.gearStats[e.gearStat or e.stat] or 0)
   if e.gearCap then gearValue = min(e.gearCap, gearValue) end
-  local value = ((e.value or 0) + gearValue + (e.fromEvent or 0) * (ctx and ctx.amount or 0)) * (negative and -1 or 1) * ammoEffectScale(it)
+  local value = ((e.value or 0) + (e.valuePerPoint or 0) * (ctx and ctx.points or 0) + gearValue + (e.fromEvent or 0) * (ctx and ctx.amount or 0)) * (negative and -1 or 1) * ammoEffectScale(it)
   for index, b in ipairs(holder.buffs) do
     if b.key == key and b.srcSide == srcSide.id and b.srcUid == srcUid then
       if e.charges and e.charges <= 0 then
@@ -1439,12 +1916,17 @@ local function addBuff(sim, holder, srcSide, it, e, t, negative, ctx)
         if b.stat == "haste" then syncCooldowns(sim, holder, t) end
         return
       end
-      b.remaining = e.duration
+      b.remaining = duration
+      b.expiresAt = t + duration
+      b.control = linkedControl
+      b.periodic = periodic
+      b.controlTypes, b.controlCharges, b.controlChance = e.controlTypes, e.controlCharges, e.controlChance
       b.missingHealth = e.missingHealth
       b.damageSchool, b.rangedOnly = e.damageSchool, e.rangedOnly
       b.exclusiveGroup = negative and e.exclusiveGroup or nil
       b.itemMatch, b.itemUids, b.paidOnly = itemMatch, itemUids, e.paidOnly
       b.charges, b.chargeVersion = e.charges, (b.chargeVersion or 0) + 1
+      b.consumeOn = e.consumeOn
       b.kind, b.match, b.double, b.free = negative and "debuff" or "buff", e.match, e.double, e.free
       if e.stack then
         b.stacks = min(e.uncapped and math.huge or e.maxStacks or 5, (b.stacks or 1) + added)
@@ -1453,21 +1935,23 @@ local function addBuff(sim, holder, srcSide, it, e, t, negative, ctx)
         b.value = value
       end
       pushEvent(sim, { t = t, side = srcSide.id, uid = it and it.uid, type = negative and "debuff" or "buff", key = key, stat = e.stat, value = b.value, target = holder.id,
-        duration = e.duration, icon = b.icon, name = b.name, stacks = b.stacks, charges = b.charges, damageSchool = e.damageSchool, rangedOnly = e.rangedOnly, refresh = true })
+        duration = duration, icon = b.icon, name = b.name, stacks = b.stacks, charges = b.charges, damageSchool = e.damageSchool, rangedOnly = e.rangedOnly, refresh = true })
       if e.stat == "haste" then syncCooldowns(sim, holder, t) end
       return b
     end
   end
   if e.charges and e.charges <= 0 then return end
   local stacks = e.stack and min(e.uncapped and math.huge or e.maxStacks or 5, added) or 1
-  local b = { key = key, stat = e.stat, value = value * stacks, remaining = e.duration, stacks = stacks, srcSide = srcSide.id, srcUid = srcUid,
-    kind = negative and "debuff" or "buff", charges = e.charges, chargeVersion = 1,
+  local b = { key = key, stat = e.stat, value = value * stacks, remaining = duration, stacks = stacks, srcSide = srcSide.id, srcUid = srcUid,
+    kind = negative and "debuff" or "buff", charges = e.charges, chargeVersion = 1, consumeOn = e.consumeOn,
     icon = it and it.def.icon, name = e.name or (it and it.def.name),
     free = e.free, match = e.match, double = e.double, missingHealth = e.missingHealth, itemMatch = itemMatch, itemUids = itemUids, paidOnly = e.paidOnly,
-    damageSchool = e.damageSchool, rangedOnly = e.rangedOnly, exclusiveGroup = negative and e.exclusiveGroup or nil }
+    damageSchool = e.damageSchool, rangedOnly = e.rangedOnly, exclusiveGroup = negative and e.exclusiveGroup or nil,
+    controlTypes = e.controlTypes, controlCharges = e.controlCharges, controlChance = e.controlChance, control = linkedControl, periodic = periodic,
+    expiresAt = t + duration }
   holder.buffs[#holder.buffs + 1] = b
   pushEvent(sim, { t = t, side = srcSide.id, uid = it and it.uid, type = negative and "debuff" or "buff", key = key, stat = e.stat, value = b.value, target = holder.id,
-    duration = e.duration, icon = b.icon, name = b.name, stacks = stacks, charges = b.charges, damageSchool = e.damageSchool, rangedOnly = e.rangedOnly })
+    duration = duration, icon = b.icon, name = b.name, stacks = stacks, charges = b.charges, damageSchool = e.damageSchool, rangedOnly = e.rangedOnly })
   if e.stat == "haste" then syncCooldowns(sim, holder, t) end
   return b
 end
@@ -1475,6 +1959,30 @@ end
 tickStatus = traced(function(sim, holder, st, t)
   if st.kind == "dot" then
     if holder.hp <= 0 then return end
+    if st.drainResource then
+      local source = sim.sides[st.srcSide]
+      local item = source and source.byUid[st.srcUid]
+      if item then
+        applyEffect(sim, source, holder, item, { type = "drain", resource = st.drainResource, amount = st.perTick, transfer = st.transfer }, t)
+        if source.channel and source.channel.uid == st.srcUid and source.channel.key == st.key and t + 1e-6 >= source.channel.endsAt then
+          finishChannel(sim, source, t, "end")
+          releaseDeferred(sim, source, holder, t)
+        end
+      end
+      return
+    end
+    if st.directTicks then
+      local source = sim.sides[st.srcSide]
+      local item = source and source.byUid[st.srcUid]
+      if item then
+        dealDamage(sim, source, holder, item, st.directEffect, t, { amount = st.perTick, directOffense = st.directOffense })
+        if source.channel and source.channel.uid == st.srcUid and source.channel.key == st.key and t + 1e-6 >= source.channel.endsAt then
+          finishChannel(sim, source, t, "end")
+          releaseDeferred(sim, source, holder, t)
+        end
+      end
+      return
+    end
     if st.pool and st.pool <= 1e-9 then return end
     local amount = st.perTick
     if st.pool then
@@ -1512,9 +2020,9 @@ tickStatus = traced(function(sim, holder, st, t)
           stacks = st.stacks, duration = st.remaining, icon = st.icon, name = st.name, school = st.school, refresh = true })
       end
     end
-    checkRevive(sim, holder, t)
+    checkRevive(sim, holder, t, true)
     if absorbed > 0 then runTriggers(sim, holder, src, nil, "absorbed", t, { amount = absorbed, source = srcItem, attacker = srcItem, school = st.school, key = st.key }) end
-    if amount > 0 then reactToDamage(sim, holder, src, t) end
+    if amount > 0 then reactToDamage(sim, holder, src, t, amount) end
     checkLowHealth(sim, holder, src, t)
     if srcItem then runTriggers(sim, src, holder, nil, "dotTick", t, { source = srcItem, amount = amount, key = st.key, school = st.school }) end
     if src.channel and src.channel.uid == st.srcUid and src.channel.key == st.key and t + 1e-6 >= src.channel.endsAt then
@@ -1522,16 +2030,61 @@ tickStatus = traced(function(sim, holder, st, t)
       releaseDeferred(sim, src, holder, t)
     end
   elseif st.kind == "hot" then
-    applyHealing(sim, holder, holder.byUid[st.srcUid], st.perTick, t, { hot = true, key = st.key })
+    local amount = st.perTick
+    if st.finite then
+      amount = st.remaining <= 0 and max(0, st.pool or 0) or min(Util.Round(amount), max(0, st.pool or 0))
+      st.pool = max(0, (st.pool or 0) - amount)
+      if st.pool <= 0 then st.remaining = 0 end
+      if amount <= 0 then return end
+    end
+    applyHealing(sim, holder, holder.byUid[st.srcUid], amount, t, { hot = true, key = st.key })
+    if holder.channel and holder.channel.kind == "hot" and holder.channel.uid == st.srcUid
+      and holder.channel.key == st.key and t + 1e-6 >= holder.channel.endsAt then
+      finishChannel(sim, holder, t, "end")
+      releaseDeferred(sim, holder, sim.sides[holder.id == "A" and "B" or "A"], t)
+    end
   end
 end)
 
 applyEffect = traced(function(sim, side, enemy, it, e, t, ctx)
   local kind = e.type
   if e.cond and not conditionMet(e.cond, side, enemy, t) then return 0 end
+  if kind == "reapplyImbue" then
+    local source = ctx and ctx.source
+    if not source or source.def.kind ~= "weapon" or not source.equipped or source.statStick or not ctx.regularAttack then return 0 end
+    for _, imbue in ipairs(side.items) do
+      if not imbue.suppressed and imbue.def.tagSet.imbue then
+        local applied = Util.ShallowCopy(ctx)
+        applied.imbueReapply = true
+        runTriggers(sim, side, enemy, imbue, "regularHit", t, applied)
+        break
+      end
+    end
+    return 0
+  end
+  if kind == "reapplyCoatings" then
+    local families = {}
+    for _, coating in ipairs(side.items) do
+      if coating.def.coating and not coating.suppressed and next(coating.coatedWeapons or {}) then
+        local family = coating.def.baseKey or coating.def.key
+        if not families[family] or (coating.def.rank or 1) > (families[family].def.rank or 1) then families[family] = coating end
+      end
+    end
+    for _, family in ipairs(Util.SortedKeys(families)) do
+      local coating, weapon = families[family], nil
+      for uid in pairs(coating.coatedWeapons) do
+        local candidate = side.byUid[uid]
+        if candidate and (not weapon or candidate.order < weapon.order) then weapon = candidate end
+      end
+      if weapon then runTriggers(sim, side, enemy, coating, "regularHit", t,
+        { source = weapon, autoAttack = true, coatingReapply = true }) end
+    end
+    return 0
+  end
   if kind == "tickDots" then
     for _, st in ipairs(Util.ShallowCopy(enemy.statuses)) do
-      if st.kind == "dot" and st.srcSide == side.id and st.remaining > 0 and indexOf(enemy.statuses, st) and statusMatches(side, st, e.match) then
+      if st.kind == "dot" and not st.drainResource and not st.directTicks and st.srcSide == side.id and st.remaining > 0 and indexOf(enemy.statuses, st)
+        and statusMatches(side, st, e.match) and areaContainsSource(side, it, e, st.srcUid) then
         tickStatus(sim, enemy, st, t)
       end
     end
@@ -1539,7 +2092,8 @@ applyEffect = traced(function(sim, side, enemy, it, e, t, ctx)
   end
   if kind == "tickHots" then
     for _, st in ipairs(Util.ShallowCopy(side.statuses)) do
-      if st.kind == "hot" and st.srcSide == side.id and st.remaining > 0 and indexOf(side.statuses, st) and statusMatches(side, st, e.match) then
+      if st.kind == "hot" and st.srcSide == side.id and st.remaining > 0 and indexOf(side.statuses, st)
+        and statusMatches(side, st, e.match) and areaContainsSource(side, it, e, st.srcUid) then
         tickStatus(sim, side, st, t)
       end
     end
@@ -1558,7 +2112,7 @@ applyEffect = traced(function(sim, side, enemy, it, e, t, ctx)
     addStatus(sim, side, side, it, e, t, "hot", ctx)
   elseif kind == "refresh" then
     for _, st in ipairs(enemy.statuses) do
-      if st.kind == "dot" and st.srcSide == side.id and (e.key and st.key == e.key or e.match and statusMatches(side, st, e.match)) then
+      if st.kind == "dot" and not st.directTicks and st.srcSide == side.id and (e.key and st.key == e.key or e.match and statusMatches(side, st, e.match)) then
         local debt = 0
         if st.pool and not st.rolling then
           local forecast = Util.ShallowCopy(st)
@@ -1592,9 +2146,12 @@ applyEffect = traced(function(sim, side, enemy, it, e, t, ctx)
     addBuff(sim, enemy, side, it, e, t, true, ctx)
   elseif kind == "resource" then
     local amount = (e.amount or 0) + (e.fromEvent or 0) * (ctx and ctx.amount or 0)
+    if e.pctMax and side.res[e.resource] then amount = amount + side.res[e.resource].max * e.pctMax end
+    if e.fromPaid then amount = amount + max(0, ctx and ctx.paidResource == e.resource and ctx.spent or 0) * e.fromPaid end
     changeResource(sim, side, enemy, it, e.resource, amount, t)
   elseif kind == "bank" then
     local amount = max(0, e.amount or (ctx and ctx.amount or 0) * (e.fraction or 1))
+    amount = amount * max(0, 1 + itemStat(side, it, "bankPct") / 100)
     side.bankCaps = side.bankCaps or {}
     side.bankCaps[e.key] = e.cap or side.bankCaps[e.key]
     local value = (side.banks[e.key] or 0) + amount
@@ -1611,7 +2168,9 @@ applyEffect = traced(function(sim, side, enemy, it, e, t, ctx)
     local pet = side.activePet
     if pet and not pet.suppressed then
       pet.enabled, pet.suppressed, pet.reason = false, true, "sacrificed"
+      for _, flag in ipairs(type(pet.def.provides) == "table" and pet.def.provides or { pet.def.provides }) do side.provides[flag] = nil end
       side.provides.pet = false
+      side.activePet = nil
       for _, command in ipairs(side.items) do
         local req = command.def.use and command.def.use.requires
         for _, flag in ipairs(type(req) == "table" and req or { req }) do
@@ -1624,25 +2183,34 @@ applyEffect = traced(function(sim, side, enemy, it, e, t, ctx)
     local chainOwner = beginChain(sim)
     local attack = side.formAttack or side.weaponMelee
     if side.stunUntil <= t and not ownerOccupied(side) and attack and attack.enabled and not attack.statStick then
+      if e.spendCharge and (side.banks[e.spendCharge] or 0) < 1 then finishChain(sim, chainOwner) return end
+      if e.spendCharge then
+        side.banks[e.spendCharge] = side.banks[e.spendCharge] - 1
+        pushEvent(sim, { t = t, side = side.id, uid = it and it.uid, type = "charge", key = e.spendCharge,
+          amount = -1, stacks = side.banks[e.spendCharge], target = side.id })
+      end
       local pending = sim.chain.pending
-      pending[#pending + 1] = { side = side, enemy = enemy, weapon = attack, count = e.count or 1, bonusAttackPowerPct = e.bonusAttackPowerPct, t = t, parentTrace = sim.trace }
+      local bonus = e.bonusAttackPowerPct and e.bonusAttackPowerPct * max(0, 1 + itemStat(side, it, "extraAttackBonusPct") / 100)
+      pending[#pending + 1] = { side = side, enemy = enemy, weapon = attack, count = e.count or 1, bonusAttackPowerPct = bonus, t = t, parentTrace = sim.trace }
     end
     finishChain(sim, chainOwner)
   elseif kind == "cast" then
     local chainOwner = beginChain(sim)
     local function enqueue(target)
-      if not target or not target.enabled or target.statStick or not target.def.use then return end
+      if not target or not target.enabled or target.statStick or not target.def.use or target.pendingUse
+        or target.def.use.once and target.fired > 0 then return end
       if not e.ignoreCondition and not conditionMet(target.def.use.condition, side, enemy, t) then return end
       local entry = { side = side, enemy = enemy, item = target, source = it, count = 1, t = t,
         ignoreCondition = e.ignoreCondition, parentTrace = sim.trace, deferDuringChannel = e.deferDuringChannel, consumeCooldown = e.consumeCooldown,
         masteryFollowup = it and it.def.kind == "talent" or nil,
         masteryName = it and it.def.kind == "talent" and it.def.name or nil }
-      if ownerOccupied(side) or side.stunUntil > t then
-        if e.deferDuringChannel and (side.channel or side.stunUntil > t) then deferCast(side, entry) end
-        return
+      if ownerOccupied(side) and not petAction(target) or side.stunUntil > t then
+        if e.deferDuringChannel and (side.channel or side.preparation or side.stunUntil > t) then deferCast(side, entry) return true end
+        return false
       end
       local pending = sim.chain.pending
       pending[#pending + 1] = entry
+      return true
     end
     if e.target == "source" then
       enqueue(ctx and ctx.source)
@@ -1651,9 +2219,9 @@ applyEffect = traced(function(sim, side, enemy, it, e, t, ctx)
         if (target.def.baseKey or target.def.key) == e.key then enqueue(target) break end
       end
     elseif e.target == "neighbors" and it then
-      for _, placement in ipairs(it.neighbors or {}) do
+      for _, placement in ipairs(effectNeighbors(side, it, e)) do
         local target = side.byUid[placement.uid]
-        if target and Util.MatchDef(target.def, e.match) then enqueue(target) end
+        if target and Util.MatchDef(target.def, e.match) and enqueue(target) and e.choose == "first" then break end
       end
     elseif e.target == "all" then
       local targets = {}
@@ -1661,16 +2229,51 @@ applyEffect = traced(function(sim, side, enemy, it, e, t, ctx)
         if target.enabled and not target.statStick and target.def.use and Util.MatchDef(target.def, e.match) then targets[#targets + 1] = target end
       end
       if e.choose == "random" and #targets > 0 then enqueue(targets[sim.rng:Range(1, #targets)])
+      elseif e.choose == "first" then
+        for _, target in ipairs(targets) do if enqueue(target) then break end end
       else for _, target in ipairs(targets) do enqueue(target) end end
     end
     finishChain(sim, chainOwner)
   elseif kind == "absorb" then
     local amount = (e.amount or 0) + (e.coef or 0) * ownerStat(side, e.powerStat or "healing") + (e.fromEvent or 0) * (ctx and ctx.amount or 0)
+    if e.damageSchool then
+      side.scopedAbsorbs = side.scopedAbsorbs or {}
+      local key = e.key or it.def.key
+      local ward
+      for _, current in ipairs(side.scopedAbsorbs) do if current.key == key and current.srcUid == it.uid then ward = current break end end
+      local before = ward and ward.amount or 0
+      if not ward then
+        ward = { key = key, srcSide = side.id, srcUid = it.uid }
+        side.scopedAbsorbs[#side.scopedAbsorbs + 1] = ward
+      end
+      ward.amount, ward.school, ward.remaining = min(side.hpMax, max(0, Util.Round(amount))), e.damageSchool, e.duration
+      ward.reflections = {}
+      local added = max(0, ward.amount - before)
+      it.shieldGained = (it.shieldGained or 0) + added
+      pushEvent(sim, { t = t, side = side.id, uid = it.uid, type = "absorb", amount = added, target = side.id, damageSchool = e.damageSchool })
+      pushEvent(sim, { t = t, side = side.id, uid = it.uid, type = "buff", key = key, stat = "absorb", value = ward.amount,
+        target = side.id, duration = e.duration, icon = it.def.icon, name = e.name or it.def.name, damageSchool = e.damageSchool })
+      return added
+    end
     local before = side.absorb
     side.absorb = min(side.hpMax, side.absorb + Util.Round(amount))
     if it then it.shieldGained = (it.shieldGained or 0) + side.absorb - before end
     pushEvent(sim, { t = t, side = side.id, uid = it and it.uid, type = "absorb", amount = side.absorb - before, target = side.id })
   elseif kind == "stun" then
+    for index, ward in ipairs(enemy.buffs) do
+      if ward.controlTypes and (not ward.controlCharges or ward.controlCharges > 0) and ward.remaining > 0 then
+        for _, controlType in ipairs(ward.controlTypes) do
+          if controlType == (e.controlType or "stun") and sim.rng:Chance(ward.controlChance or 100) then
+            if ward.controlCharges then ward.controlCharges = ward.controlCharges - 1 end
+            if ward.controlCharges == 0 then
+              table.remove(enemy.buffs, index)
+              pushEvent(sim, { t = t, side = ward.srcSide, uid = ward.srcUid, type = "statusRemoved", kind = "buff", key = ward.key, target = enemy.id })
+            end
+            return 0
+          end
+        end
+      end
+    end
     local duration = e.duration
     if enemy.stunDRUntil and t < enemy.stunDRUntil then duration = duration * 0.5 end
     enemy.stunDRUntil = t + 12
@@ -1682,9 +2285,14 @@ applyEffect = traced(function(sim, side, enemy, it, e, t, ctx)
     for index = #enemy.controls, 1, -1 do
       if enemy.controls[index].endsAt <= t then table.remove(enemy.controls, index) end
     end
-    enemy.controls[#enemy.controls + 1] = { controlType = e.controlType or "stun", endsAt = t + duration }
+    enemy.controls[#enemy.controls + 1] = { controlType = e.controlType or "stun", endsAt = t + duration, breakOnDamage = e.breakOnDamage,
+      sourceKey = it and (it.def.baseKey or it.def.key), srcSide = side.id, srcUid = it and it.uid, holdWeapons = e.holdWeapons,
+      holdDirect = e.holdDirect, healPctPerSecond = e.healPctPerSecond, startedAt = t }
     enemy.stunUntil = max(previous, t + duration)
-    if enemy.stunUntil > t then finishChannel(sim, enemy, t, "interrupt", "stun") end
+    if enemy.stunUntil > t then
+      finishChannel(sim, enemy, t, "interrupt", "stun")
+      cancelPendingUses(sim, enemy, t, "control", true)
+    end
     local extension = enemy.stunUntil - max(t, previous)
     if extension > 0 then
       for _, target in ipairs(enemy.items) do
@@ -1696,23 +2304,31 @@ applyEffect = traced(function(sim, side, enemy, it, e, t, ctx)
     syncCooldowns(sim, enemy, t)
     pushEvent(sim, { t = t, side = side.id, uid = it and it.uid, type = "stun", duration = duration, controlType = e.controlType, target = enemy.id })
     runTriggers(sim, enemy, side, nil, "stunned", t, { duration = e.duration, controlType = e.controlType or "stun" })
-    runTriggers(sim, side, enemy, nil, "enemyStunned", t, { source = it, duration = duration })
+    runTriggers(sim, side, enemy, nil, "enemyStunned", t, { source = it, duration = duration, controlType = e.controlType or "stun" })
   elseif kind == "clearControl" then
     if not side.controls then return 0 end
-    local types, remaining, removed = {}, t, 0
+    local types, remaining, removed, removedControls = {}, t, 0, {}
     for _, controlType in ipairs(e.types or {}) do types[controlType] = true end
     for index = #side.controls, 1, -1 do
       local control = side.controls[index]
       if control.endsAt <= t then
         table.remove(side.controls, index)
-      elseif not e.types or types[control.controlType] then
+      elseif (not e.types or types[control.controlType]) and (not e.breakOnly or control.breakOnDamage) then
         removed = removed + 1
+        removedControls[control] = true
         table.remove(side.controls, index)
       else
         remaining = max(remaining, control.endsAt)
       end
     end
     if removed == 0 then return 0 end
+    for index = #side.buffs, 1, -1 do
+      local buff = side.buffs[index]
+      if buff.control and removedControls[buff.control] then
+        table.remove(side.buffs, index)
+        pushEvent(sim, { t = t, side = buff.srcSide, uid = buff.srcUid, type = "statusRemoved", key = buff.key, kind = buff.kind, target = side.id })
+      end
+    end
     local shortened = max(0, side.stunUntil - remaining)
     side.stunUntil = remaining
     if shortened > 0 then
@@ -1727,9 +2343,12 @@ applyEffect = traced(function(sim, side, enemy, it, e, t, ctx)
     return removed
   elseif kind == "cdr" then
     if e.target == "neighbors" and it then
-      for _, np in ipairs(it.neighbors or {}) do
+      for _, np in ipairs(effectNeighbors(side, it, e)) do
         local n = side.byUid[np.uid]
-        if n and n.enabled and Util.MatchDef(n.def, e.match) then advanceCooldown(sim, side, n, e.amount, t, e.clampReady) end
+        if n and n.enabled and Util.MatchDef(n.def, e.match) and (not e.choose or e.amount < 0 or n.cd > 0) then
+          advanceCooldown(sim, side, n, e.amount, t, e.clampReady)
+          if e.choose == "first" then break end
+        end
       end
     elseif e.target == "all" then
       for _, n in ipairs(side.items) do
@@ -1739,10 +2358,44 @@ applyEffect = traced(function(sim, side, enemy, it, e, t, ctx)
       advanceCooldown(sim, side, it, e.amount, t, e.clampReady)
     end
   elseif kind == "cleanse" then
+    if e.debuffs then
+      local selected, count = {}, 0
+      local function family(status) return tostring(status.srcSide) .. ":" .. tostring(status.srcUid) end
+      for _, list in ipairs({ side.statuses, side.buffs }) do
+        for _, status in ipairs(list) do
+          local source = sim.sides[status.srcSide]
+          local group = family(status)
+          if count < (e.count or 1) and not selected[group] and not status.directTicks and (status.kind == "dot" or status.kind == "debuff")
+            and source and statusMatches(source, status, e.match) then
+            selected[group], count = true, count + 1
+          end
+        end
+      end
+      local haste = false
+      for _, list in ipairs({ side.statuses, side.buffs }) do
+        for index = #list, 1, -1 do
+          local status = list[index]
+          if not status.directTicks and (status.kind == "dot" or status.kind == "debuff") and selected[family(status)] then
+            table.remove(list, index)
+            haste = haste or status.stat == "haste"
+            pushEvent(sim, { t = t, side = status.srcSide, uid = status.srcUid, type = "statusRemoved", kind = status.kind, key = status.key, target = side.id })
+            local source = sim.sides[status.srcSide]
+            if source and source.channel and source.channel.uid == status.srcUid and source.channel.key == status.key then
+              finishChannel(sim, source, t, "interrupt", "cleanse")
+            end
+          end
+        end
+      end
+      if haste then syncCooldowns(sim, side, t) end
+      if count > 0 then pushEvent(sim, { t = t, side = side.id, uid = it and it.uid, type = "cleanse", amount = count, target = side.id }) end
+      return count
+    end
     local i = 1
     local removed = 0
     while i <= #side.statuses and removed < (e.count or 1) do
-      if side.statuses[i].kind == "dot" then
+      local candidate = side.statuses[i]
+      local sourceSide = sim.sides[candidate.srcSide]
+      if candidate.kind == "dot" and not candidate.directTicks and (not e.match or sourceSide and statusMatches(sourceSide, candidate, e.match)) then
         local status = table.remove(side.statuses, i)
         removed = removed + 1
         pushEvent(sim, { t = t, side = status.srcSide, uid = status.srcUid, type = "statusRemoved", kind = "dot", key = status.key, target = side.id })
@@ -1758,23 +2411,39 @@ applyEffect = traced(function(sim, side, enemy, it, e, t, ctx)
     local removed = 0
     local hasteRemoved = false
     while i <= #enemy.buffs and removed < (e.count or 1) do
-      if enemy.buffs[i].value > 0 then
+      if enemy.buffs[i].kind ~= "debuff" and enemy.buffs[i].value > 0 then
         local buff = table.remove(enemy.buffs, i)
         hasteRemoved = hasteRemoved or buff.stat == "haste"
         removed = removed + 1
         pushEvent(sim, { t = t, side = buff.srcSide, uid = buff.srcUid, type = "statusRemoved", kind = buff.kind or "buff", key = buff.key, target = enemy.id })
       else i = i + 1 end
     end
+    local wards = enemy.scopedAbsorbs or {}
+    while #wards > 0 and removed < (e.count or 1) do
+      local ward = table.remove(wards, 1)
+      if ward.amount > 0 and ward.remaining > 0 then removed = removed + 1 end
+      pushEvent(sim, { t = t, side = ward.srcSide, uid = ward.srcUid, type = "statusRemoved", kind = "buff", key = ward.key, target = enemy.id })
+    end
     if hasteRemoved then syncCooldowns(sim, enemy, t) end
+    if removed > 0 and (e.healCoef or e.healAmount) then
+      heal(sim, side, it, { type = "heal", min = e.healAmount or 0, max = e.healAmount or 0,
+        coef = e.healCoef or 0, powerStat = e.powerStat or "sp", noCrit = true }, t, ctx)
+    end
   elseif kind == "drain" then
     local pool = enemy.res[e.resource]
     if pool then
       local before = pool.cur
-      pool.cur = max(0, pool.cur - e.amount)
+      local amount = max(0, (e.amount or 0) + (e.coef or 0) * itemStat(side, it, e.powerStat or "sp"))
+      pool.cur = max(0, pool.cur - amount)
       local actual = before - pool.cur
       if actual > 0 then
         pushEvent(sim, { t = t, side = enemy.id, type = "resource", resource = e.resource, amount = -actual, target = enemy.id, drain = true })
         if e.transfer then changeResource(sim, side, enemy, it, e.resource, actual, t) end
+        if e.damagePerResource then
+          local damage = { type = "damage", fromEvent = e.damagePerResource, school = e.school or "shadow",
+            noDodge = true, noCrit = e.noCrit, noOwnTriggers = e.noOwnTriggers }
+          dealDamage(sim, side, enemy, it, damage, t, { amount = actual })
+        end
       end
     end
   end
@@ -1797,7 +2466,7 @@ end
 local function cooldownWouldChange(side, target, effect, t)
   if side.stunUntil > t then return false end
   local after = target.cd - effect.amount * cooldownSpeed(side, target)
-  if effect.clampReady or ownerOccupied(side) and target.def.kind ~= "pet" then after = max(0, after) end
+  if effect.clampReady ~= false or ownerOccupied(side) and not petAction(target) then after = max(0, after) end
   return after ~= target.cd
 end
 
@@ -1814,7 +2483,7 @@ local function emptyCooldownTrigger(side, item, trigger, t)
   for _, effect in ipairs(trigger.effects) do
     if effect.type ~= "cdr" then return false end
     if effect.target == "neighbors" then
-      for _, neighbor in ipairs(item.neighbors or {}) do
+      for _, neighbor in ipairs(effectNeighbors(side, item, effect)) do
         local target = side.byUid[neighbor.uid]
         if target and target.enabled and Util.MatchDef(target.def, effect.match) and cooldownWouldChange(side, target, effect, t) then return false end
       end
@@ -1839,6 +2508,9 @@ runTriggers = function(sim, side, enemy, it, on, t, ctx)
       for idx, trig in ipairs(item.def.triggers) do
         if trig.on == on then
           local ok = true
+          local counter = trig.counterKey or idx
+          local reapply = item.def.coating and ctx.coatingReapply or item.def.tagSet.imbue and ctx.imbueReapply
+          if item.def.coating and on == "regularHit" and not (ctx.source and item.coatedWeapons and item.coatedWeapons[ctx.source.uid]) then ok = false end
           local key = side.id .. ":" .. tostring(item.uid) .. ":" .. idx
           if chain.active[key] or chain.count >= Sim.MAX_CHAIN_PROCS then ok = false end
           local activation = trig.oncePerActivation and ctx.activationId
@@ -1858,26 +2530,30 @@ runTriggers = function(sim, side, enemy, it, on, t, ctx)
             if not matches then ok = false end
           end
           if ok and trig.healing ~= nil and trig.healing ~= (not not ctx.healing) then ok = false end
+          if ok and trig.effective and (ctx.amount or 0) <= 0 then ok = false end
+          if ok and trig.regularAttackOnly and not ctx.regularAttack then ok = false end
+          if ok and trig.paidOnly and (ctx.spent or 0) + (ctx.comboSpent or 0) <= 0 then ok = false end
           if ok and trig.critical ~= nil and trig.critical ~= (not not ctx.crit) then ok = false end
-          if ok and trig.icd and (item.trigIcd[idx] or -1) > t then ok = false end
+          if ok and not reapply and trig.icd and (item.trigIcd[counter] or -1) > t then ok = false end
           if ok and trig.condition and not conditionMet(trig.condition, side, enemy, t) then ok = false end
+          if ok and trig.onlyRecovering and emptyCooldownTrigger(side, item, trig, t) then ok = false end
           local times = 1
           if ok and trig.every then
             if type(trig.every) ~= "number" or trig.every < 1 or trig.every ~= floor(trig.every) or trig.everyAmount then ok = false end
-            if ok and trig.chance and not sim.rng:Chance(trig.chance) then ok = false end
+            if ok and not reapply and trig.chance and not sim.rng:Chance(trig.chance + itemStat(side, item, "procChance")) then ok = false end
             if ok then
               item.trigCount = item.trigCount or {}
-              local progress = (item.trigCount[idx] or 0) + 1
+              local progress = (item.trigCount[counter] or 0) + 1
               times = floor(progress / trig.every)
-              item.trigCount[idx] = progress - times * trig.every
+              item.trigCount[counter] = progress - times * trig.every
             end
           elseif ok and trig.everyAmount then
             item.trigProgress = item.trigProgress or {}
-            local progress = (item.trigProgress[idx] or 0) + max(0, ctx.amount or 0)
+            local progress = (item.trigProgress[counter] or 0) + max(0, ctx.amount or 0)
             times = floor(progress / trig.everyAmount)
-            item.trigProgress[idx] = progress - times * trig.everyAmount
+            item.trigProgress[counter] = progress - times * trig.everyAmount
           end
-          if ok and not trig.every and trig.chance and not sim.rng:Chance(trig.chance) then ok = false end
+          if ok and not reapply and not trig.every and trig.chance and not sim.rng:Chance(trig.chance + itemStat(side, item, "procChance")) then ok = false end
           if ok and times > 0 then
             if activation then
               chain.activationTriggers = chain.activationTriggers or {}
@@ -1885,10 +2561,10 @@ runTriggers = function(sim, side, enemy, it, on, t, ctx)
               chain.activationTriggers[key][activation] = true
             end
             if trig.icd then
-              -- A single resource event can cross many thresholds. An internal
-              -- cooldown permits one response, including within that event.
+
+
               times = min(times, 1)
-              item.trigIcd[idx] = t + trig.icd + max(0, side.stunUntil - t)
+              item.trigIcd[counter] = t + trig.icd + max(0, side.stunUntil - t)
             end
             chain.active[key] = true
             local attempts = (emptyCooldownTrigger(side, item, trig, t) or emptyResourceTrigger(side, trig)) and 0 or min(times, Sim.MAX_CHAIN_PROCS - chain.count)
@@ -1914,6 +2590,9 @@ runTriggers = function(sim, side, enemy, it, on, t, ctx)
                 local repeats = e.type == "damage" and not item.def.use and anyMatch(side.doubleMatches, item.def) and 2 or 1
                 for repeatIndex = 1, repeats do applyEffect(sim, side, enemy, item, e, t, appliedCtx) end
               end
+              if item.def.coating and on == "regularHit" then
+                runTriggers(sim, side, enemy, nil, "coatingApplied", t, { source = item, weapon = ctx.source, reapply = reapply })
+              end
               sim.trace = previous
             end
             chain.active[key] = nil
@@ -1925,9 +2604,43 @@ runTriggers = function(sim, side, enemy, it, on, t, ctx)
   finishChain(sim, chainOwner)
 end
 
+local function resolveUseEffects(sim, side, enemy, it, t, ctx, times)
+  local chainOwner = beginChain(sim)
+  local previous = side.itemActivation
+  if ctx.statsSnapshot then
+    side.itemActivation = { item = it, snapshot = ctx.statsSnapshot, schools = ctx.schoolSnapshot }
+  end
+  ctx.petLandedAttacks = 0
+  for pass = 1, times do
+    ctx.activationPass, ctx.landed = pass, false
+    for _, effect in ipairs(it.def.use.effects) do applyEffect(sim, side, enemy, it, effect, t, ctx) end
+    if ctx.landed then ctx.petLandedAttacks = ctx.petLandedAttacks + 1 end
+  end
+  side.itemActivation = previous
+  finishChain(sim, chainOwner)
+end
+
+local function updatePendingUses(sim, side, enemy, t)
+  for _, item in ipairs(side.items) do
+    local pending = item.pendingUse
+    if pending and pending.endsAt <= t + 1e-6 then
+      item.pendingUse = nil
+      if side.preparation == pending then side.preparation = nil end
+      if side.hp > 0 and enemy.hp > 0 then
+        pushEvent(sim, { t = t, side = side.id, uid = item.uid,
+          type = pending.preparation and "channel" or "delayed", phase = "end",
+          key = item.def.baseKey or item.def.key, target = side.id,
+          duration = pending.duration, startedAt = pending.startedAt, endsAt = pending.endsAt, preparation = pending.preparation })
+        resolveUseEffects(sim, side, enemy, item, t, pending.ctx, pending.times)
+      end
+    end
+  end
+end
+
 fireItem = traced(function(sim, side, enemy, it, t, ctx)
   if it.statStick then return end
   local use = it.def.use
+  if it.pendingUse or use.prepare and ownerOccupied(side) then return end
   if use.once and it.fired > 0 then return end
   ctx = ctx or {}
   if use.channel then
@@ -1940,7 +2653,7 @@ fireItem = traced(function(sim, side, enemy, it, t, ctx)
   end
   local chainOwner = beginChain(sim)
   local previousActivation = side.itemActivation
-  side.itemActivation = { item = it, paidBuffs = not ctx.freeCast and ctx.paidBuffs or nil }
+  side.itemActivation = { item = it, paidBuffs = not ctx.freeCast and ctx.paidBuffs or nil, freeBuff = ctx.freeBuff }
   local charged = {}
   local function matches(buff)
     return (not buff.itemMatch or Util.MatchDef(it.def, buff.itemMatch))
@@ -1949,7 +2662,7 @@ fireItem = traced(function(sim, side, enemy, it, t, ctx)
   end
   for _, buff in ipairs(side.buffs) do
     local paid = not buff.paidOnly or side.itemActivation.paidBuffs and side.itemActivation.paidBuffs[buff]
-    if buff.charges and buff.charges > 0 and not buff.free and matches(buff) and paid
+    if buff.charges and buff.charges > 0 and not buff.consumeOn and (not buff.free or ctx.freeBuff == buff) and matches(buff) and paid
       and (not buff.double or Util.MatchDef(it.def, buff.double)) then
       charged[buff] = buff.paidOnly and paid.version or buff.chargeVersion or 0
     end
@@ -1957,7 +2670,12 @@ fireItem = traced(function(sim, side, enemy, it, t, ctx)
   if ctx.freeCast then ctx.points, ctx.spent, ctx.empoweredHits = 0, 0, 0 end
   sim.activationSequence = (sim.activationSequence or 0) + 1
   ctx.activationId = sim.activationSequence
+  ctx.paidResource = use.resource
   ctx.source = it
+  if ctx.channelState then
+    ctx.channelState.useContext = { source = it, spent = ctx.spent, comboSpent = ctx.comboSpent,
+      paidResource = ctx.paidResource, freeCast = ctx.freeCast, activationId = ctx.activationId }
+  end
   it.fired = it.fired + 1
   pushEvent(sim, { t = t, side = side.id, uid = it.uid, type = "fire", key = it.def.key, freeCast = ctx.freeCast, masteryName = ctx.masteryName,
     sourceKey = ctx.caster and ctx.caster.def.key })
@@ -1968,14 +2686,22 @@ fireItem = traced(function(sim, side, enemy, it, t, ctx)
       if b.double and matches(b) and Util.MatchDef(it.def, b.double) then times = 2 break end
     end
   end
-  ctx.petLandedAttacks = 0
-  for pass = 1, times do
-    ctx.activationPass = pass
-    ctx.landed = false
-    for _, e in ipairs(use.effects) do
-      applyEffect(sim, side, enemy, it, e, t, ctx)
-    end
-    if ctx.landed then ctx.petLandedAttacks = ctx.petLandedAttacks + 1 end
+  local duration = use.prepare and max(0, use.prepare + it.mods.prepareFlat + itemStat(side, it, "prepareFlat"))
+    or use.delay and max(0, use.delay + itemStat(side, it, "delayFlat")) or 0
+  if duration > 0 then
+    ctx.statsSnapshot, ctx.schoolSnapshot = {}, {}
+    for _, stat in ipairs(STAT_KEYS) do ctx.statsSnapshot[stat] = itemStat(side, it, stat) end
+    for stat in pairs(Sim.ITEM_STATS) do ctx.statsSnapshot[stat] = itemStat(side, it, stat) end
+    for school in pairs(ns.SCHOOL_COLORS) do ctx.schoolSnapshot[school] = scopedOutgoingMultiplier(side, it, school) end
+    local pending = { ctx = ctx, times = times, preparation = use.prepare ~= nil,
+      duration = duration, startedAt = t, endsAt = t + duration }
+    it.pendingUse = pending
+    if pending.preparation then side.preparation = pending end
+    pushEvent(sim, { t = t, side = side.id, uid = it.uid, type = pending.preparation and "channel" or "delayed",
+      phase = "start", key = it.def.baseKey or it.def.key, target = side.id,
+      duration = duration, startedAt = t, endsAt = pending.endsAt, preparation = pending.preparation })
+  else
+    resolveUseEffects(sim, side, enemy, it, t, ctx, times)
   end
   if ctx.channelState and side.channel == ctx.channelState then
     side.channel.starting = false
@@ -1983,14 +2709,16 @@ fireItem = traced(function(sim, side, enemy, it, t, ctx)
   end
   masteryEvent(sim, side, enemy, "use", it, t, ctx)
   runTriggers(sim, side, enemy, it, "use", t, ctx)
+  local useContext = { source = it, points = ctx.points, spent = ctx.spent, comboSpent = ctx.comboSpent,
+    paidResource = ctx.paidResource, freeCast = ctx.freeCast, activationId = ctx.activationId }
   for _, other in ipairs(side.items) do
     if other ~= it and (other.enabled or other.def.passiveTriggers) then
-      runTriggers(sim, side, enemy, other, "anyUse", t, { source = it, points = ctx.points })
+      runTriggers(sim, side, enemy, other, "anyUse", t, useContext)
     end
   end
   for _, np in ipairs(it.neighbors or {}) do
     local n = side.byUid[np.uid]
-    if n then runTriggers(sim, side, enemy, n, "adjacentUse", t, { source = it }) end
+    if n then runTriggers(sim, side, enemy, n, "adjacentUse", t, useContext) end
   end
   local hasteConsumed = false
   for index = #side.buffs, 1, -1 do
@@ -2012,49 +2740,90 @@ fireItem = traced(function(sim, side, enemy, it, t, ctx)
   finishChain(sim, chainOwner)
 end)
 
-local function findFreeBuff(side, def)
-  for _, b in ipairs(side.buffs) do
-    if b.free and (not b.match or Util.MatchDef(def, b.match)) then return b end
-  end
-end
-
 local function releaseClaim(claimed, it)
   local claim = claimed.items and claimed.items[it]
   if not claim then return end
-  claimed[claim.resource] = max(0, (claimed[claim.resource] or 0) - claim.amount)
+  for resource, amount in pairs(claim) do claimed[resource] = max(0, (claimed[resource] or 0) - amount) end
   claimed.items[it] = nil
 end
 
 local function activationAdmission(side, enemy, it, claimed, t)
   local use = it.def.use
-  if ownerOccupied(side) and it.def.kind ~= "pet" and not (side.channel and use.interruptChannel) then
+  if it.pendingUse then releaseClaim(claimed, it) return nil, "pending" end
+  if ownerOccupied(side) and not petAction(it) and not ((side.channel or side.preparation) and use.interruptChannel) then
     releaseClaim(claimed, it)
     return nil, "channel"
   end
   if not it.enabled or side.hp <= 0 or enemy.hp <= 0 then releaseClaim(claimed, it) return end
   if use.once and it.fired > 0 then releaseClaim(claimed, it) return end
-  if not conditionMet(use.condition, side, enemy, t) then releaseClaim(claimed, it) return end
+  if not petAction(it) then
+    for _, control in ipairs(enemy.controls or {}) do
+      if control.srcSide == side.id and control.endsAt > t and (control.holdWeapons and it.def.kind == "weapon"
+        or control.holdDirect and not use.prepare and Util.MatchDef(it.def, { damaging = "direct" })) then
+        it.cd = max(0, it.cd)
+        releaseClaim(claimed, it)
+        return nil, "hold"
+      end
+    end
+  end
+  if not conditionMet(use.condition, side, enemy, t, it) then releaseClaim(claimed, it) return end
+  if use.needsNeighbor then
+    local found = false
+    for _, placement in ipairs(it.neighbors or {}) do
+      local target = side.byUid[placement.uid]
+      if target and target.enabled and not target.suppressed and not target.statStick and Util.MatchDef(target.def, use.needsNeighbor) then found = true break end
+    end
+    if not found then releaseClaim(claimed, it) return end
+  end
+  if use.minRecovering then
+    local useful = false
+    for _, effect in ipairs(use.effects) do
+      if effect.type == "cdr" and effect.target == "neighbors" then
+        for _, placement in ipairs(effectNeighbors(side, it, effect)) do
+          local target = side.byUid[placement.uid]
+          if target and target ~= it and target.enabled and target.cdMax and target.cd >= target.cdMax * use.minRecovering
+            and (not use.recoverUsed or target.fired > 0)
+            and Util.MatchDef(target.def, effect.match) then useful = true break end
+        end
+      end
+    end
+    if not useful then releaseClaim(claimed, it) return end
+  end
+  for _, effect in ipairs(use.effects) do
+    if type(effect.consumeHots) == "table" and not consumableHot(side, it, effect) then releaseClaim(claimed, it) return end
+  end
   local payment = { cost = 0, healthCost = max(0, Util.Round((use.healthCost or 0) + side.hpMax * (use.healthCostPct or 0))) }
   if payment.healthCost > 0 and side.hp <= payment.healthCost then releaseClaim(claimed, it) return end
   if use.resource then
     payment.pool = side.res[use.resource]
-    payment.cost = (use.cost or 0) * max(0, 1 + it.mods.costPct / 100)
-    if payment.cost > 0 and not use.spendAll then
-      if anyMatch(side.freeMatches, it.def) then payment.cost = 0
-      else
-        payment.freeBuff = findFreeBuff(side, it.def)
-        if payment.freeBuff then payment.cost = 0 end
-      end
-    end
+    payment.cost, payment.freeBuff = activationCost(side, it)
     local claim = claimed.items and claimed.items[it]
-    local own = claim and claim.resource == use.resource and claim.amount or 0
+    local own = claim and claim[use.resource] or 0
     local available = (payment.pool and payment.pool.cur or 0) - (claimed[use.resource] or 0) + own
-    if not payment.pool or (payment.cost > 0 and available < payment.cost) then
-      if payment.pool and payment.cost > 0 then
+    local comboAvailable = 0
+    if use.comboCost then
+      payment.comboPool = side.res.combo
+      comboAvailable = (payment.comboPool and payment.comboPool.cur or 0) - (claimed.combo or 0) + (claim and claim.combo or 0)
+      payment.comboCost = use.spendCombo and math.floor(comboAvailable) or use.comboCost
+    end
+    if not payment.pool or (payment.cost > 0 and available < payment.cost)
+      or use.comboCost and (not payment.comboPool or comboAvailable < use.comboCost) then
+      if payment.pool and not use.prefer then
         releaseClaim(claimed, it)
-        claimed.items = claimed.items or {}
-        claimed.items[it] = { resource = use.resource, amount = payment.cost }
-        claimed[use.resource] = (claimed[use.resource] or 0) + payment.cost
+        local request = { [use.resource] = payment.cost }
+        if use.comboCost and payment.comboPool then
+          request.combo = use.comboCost
+        end
+        local reservable = true
+        for resource, amount in pairs(request) do
+          local pool = side.res[resource]
+          if not pool or (claimed[resource] or 0) + amount > pool.max then reservable = false break end
+        end
+        if reservable then
+          claimed.items = claimed.items or {}
+          claimed.items[it] = request
+          for resource, amount in pairs(request) do claimed[resource] = (claimed[resource] or 0) + amount end
+        end
       end
       return nil, "resource"
     end
@@ -2071,6 +2840,11 @@ local function activationAdmission(side, enemy, it, claimed, t)
     end
   end
   releaseClaim(claimed, it)
+  if use.prefer and not conditionMet(use.prefer.condition, side, enemy, t) then
+    it.preferenceUntil = it.preferenceUntil or t + use.prefer.wait
+    if t + 1e-6 < it.preferenceUntil then return nil, "preference" end
+  end
+  it.preferenceUntil = nil
   return payment
 end
 
@@ -2079,17 +2853,22 @@ local function activateItem(sim, side, enemy, it, t, payment)
   sim.trace = newTrace(sim, previous)
   local chainOwner = beginChain(sim)
   local use = it.def.use
-  if use.interruptChannel then finishChannel(sim, side, t, "interrupt", "ability") end
+  if use.interruptChannel then
+    finishChannel(sim, side, t, "interrupt", "ability")
+    cancelPendingUses(sim, side, t, "ability", true)
+  end
   local ctx = { regularAttack = it.def.kind == "weapon" }
   if use.channel then ctx.channelState = beginChannel(sim, side, enemy, it, t) end
   local spent = payment.pool and (use.spendAll and payment.pool.cur or payment.total or payment.cost) or 0
-  if use.resource then ctx.freeCast = spent <= 0 or nil end
+  local comboSpent = payment.comboCost or 0
+  if use.resource then ctx.freeCast = spent + comboSpent <= 0 or nil end
   if use.spendAll and payment.pool then ctx.points = floor(payment.pool.cur) end
   if use.spendMax then ctx.points = spent end
+  if use.comboCost then ctx.points, ctx.comboSpent = comboSpent, comboSpent end
   ctx.spent, ctx.empoweredHits = spent, payment.empoweredHits or 0
-  if spent > 0 then
-    -- Payment can grant a next-strike charge. Only charges owned before paying
-    -- apply to this strike; refreshed versions remain available for the next.
+  if spent + comboSpent > 0 then
+
+
     ctx.paidBuffs = {}
     for _, buff in ipairs(side.buffs) do
       if buff.paidOnly then ctx.paidBuffs[buff] = { value = buff.value, version = buff.chargeVersion or 0 } end
@@ -2101,6 +2880,7 @@ local function activateItem(sim, side, enemy, it, t, payment)
   if it.cd < -it.cdMax then it.cd = 0 end
   it.cd = it.cd + it.cdMax
   if spent > 0 then changeResource(sim, side, enemy, it, use.resource, -spent, t) end
+  if comboSpent > 0 then changeResource(sim, side, enemy, it, "combo", -comboSpent, t) end
   if payment.healthCost > 0 then
     side.hp = side.hp - payment.healthCost
     pushEvent(sim, { t = t, side = side.id, uid = it.uid, type = "healthCost", amount = payment.healthCost, target = side.id })
@@ -2108,13 +2888,8 @@ local function activateItem(sim, side, enemy, it, t, payment)
     checkLowHealth(sim, side, enemy, t)
   end
   if payment.freeBuff then
-    local index = indexOf(side.buffs, payment.freeBuff)
-    local buff = index and table.remove(side.buffs, index)
+    ctx.freeBuff = payment.freeBuff
     pushEvent(sim, { t = t, side = side.id, uid = it.uid, type = "free", target = side.id })
-    if buff then
-      pushEvent(sim, { t = t, side = buff.srcSide, uid = buff.srcUid, type = "statusRemoved", kind = buff.kind or "buff", key = buff.key, target = side.id })
-      if buff.stat == "haste" then syncCooldowns(sim, side, t) end
-    end
   end
   fireItem(sim, side, enemy, it, t, ctx)
   if not use.once then pushCooldown(sim, side, it, t, side.stunUntil > t) end
@@ -2122,7 +2897,23 @@ local function activateItem(sim, side, enemy, it, t, payment)
   sim.trace = previous
 end
 
-reactToDamage = function(sim, side, enemy, t)
+reactToDamage = function(sim, side, enemy, t, amount)
+  for _, control in ipairs(side.controls or {}) do
+    if control.breakOnDamage then
+      applyEffect(sim, side, enemy, nil, { type = "clearControl", breakOnly = true }, t)
+      break
+    end
+  end
+  for index = #side.statuses, 1, -1 do
+    local status = side.statuses[index]
+    if status.kind == "hot" and status.breakOnDamage then
+      if status.breakBudget then status.breakBudget = status.breakBudget - max(0, amount or 0) end
+      if not status.breakBudget or status.breakBudget <= 0 then
+        table.remove(side.statuses, index)
+        pushEvent(sim, { t = t, side = status.srcSide, uid = status.srcUid, type = "statusRemoved", kind = "hot", key = status.key, target = side.id })
+      end
+    end
+  end
   if side.hp <= 0 or enemy.hp <= 0 or side.stunUntil > t then return end
   updateChannel(sim, side, t)
   releaseDeferred(sim, side, enemy, t)
@@ -2160,15 +2951,19 @@ reactToDamage = function(sim, side, enemy, t)
 end
 
 local function actItems(sim, side, enemy, t, dt)
+  updatePendingUses(sim, side, enemy, t)
   updateChannel(sim, side, t)
   releaseDeferred(sim, side, enemy, t)
   syncCooldowns(sim, side, t)
   local claimed = {}
   local previousClaims = side.activationClaims
   side.activationClaims = claimed
+  local previousStep = side.timingStep
+  side.timingStep = { t = t, dt = dt, advanced = {} }
   for _, it in ipairs(side.actOrder) do
     if it.enabled and side.hp > 0 and enemy.hp > 0 and side.stunUntil <= t then
       it.cd = it.cd - dt * cooldownSpeed(side, it)
+      side.timingStep.advanced[it] = true
       if it.cd <= 0 then
         local payment, reason = activationAdmission(side, enemy, it, claimed, t)
         if payment then activateItem(sim, side, enemy, it, t, payment)
@@ -2190,6 +2985,7 @@ local function actItems(sim, side, enemy, t, dt)
     end
   end
   side.activationClaims = previousClaims
+  side.timingStep = previousStep
 end
 
 local function summarise(side)
@@ -2225,7 +3021,7 @@ function Sim.Run(fighterA, fighterB, seed, options)
   end
   local function snapshot()
     return {
-      t = t, hpA = max(0, A.hp), hpB = max(0, B.hp), absA = A.absorb, absB = B.absorb,
+      t = t, hpA = max(0, A.hp), hpB = max(0, B.hp), absA = totalAbsorb(A), absB = totalAbsorb(B),
       resA = resSnapshot(A), resB = resSnapshot(B),
     }
   end
@@ -2253,7 +3049,7 @@ function Sim.Run(fighterA, fighterB, seed, options)
     if tick % 2 == 0 then first, second = B, A end
     for _, side in ipairs({ first, second }) do
       local enemy = side == A and B or A
-      regen(side, dt)
+      regen(sim, side, dt, t)
       expireBuffs(sim, side, dt, t)
       statusTick(sim, side, t)
       if side.hp > 0 and enemy.hp > 0 then actItems(sim, side, enemy, t, dt) end

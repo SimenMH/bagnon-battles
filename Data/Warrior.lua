@@ -2,171 +2,571 @@ local ADDON, ns = ...
 local H = ns.H
 local I, S = H.I, H.S
 local WARRIOR = { "WARRIOR" }
+local ability = H.QualityAbilities(WARRIOR)
 
-H.Weapon{ id = 1290, key = "worn_axe", name = "Worn Axe", icon = I("inv_axe_11"), quality = 1, cost = 3, weaponType = "axe", classes = WARRIOR, weaponMin = 5, weaponMax = 9, speed = 2.4, noShop = true, starter = true }
 
-H.Ability{ id = 1200, key = "heroic_strike", spec = "shared", name = "Heroic Strike", icon = I("Ability_Rogue_Ambush"), quality = 1, classes = WARRIOR, shape = S.v2, tags = { "arms", "fury", "melee", "strike" },
-  use = { cd = 2.8, cost = 10, resource = "rage", requires = "melee", effects = { { type = "damage", weapon = true, min = 3, max = 5, school = "physical", coef = 0.16 } } } }
-H.Ability{ id = 1201, key = "rend", spec = "arms", name = "Rend", icon = I("Ability_Gouge"), quality = 1, classes = WARRIOR, shape = S.v2, tags = { "arms", "melee", "bleed", "dot" },
-  use = { cd = 9, cost = 5, resource = "rage", requires = "melee", effects = { { type = "dot", key = "rend", school = "physical", tick = 3, coef = 0.06, duration = 9, preserveTicks = true } } } }
-H.Ability{ id = 1203, key = "overpower", spec = "arms", name = "Overpower", icon = I("Ability_MeleeDamage"), quality = 2, minRound = 2, classes = WARRIOR, shape = S.v2, tags = { "arms", "melee", "strike" }, rankable = true,
-  triggers = { { on = "targetDodged", effects = { { type = "damage", weapon = true, min = 5, max = 8, school = "physical", coef = 0.2, critBonus = 25, noDodge = true } } } } }
-H.Ability{ id = 1204, key = "mortal_strike", spec = "arms", name = "Mortal Strike", icon = I("Ability_Warrior_SavageBlow"), quality = 3, cost = 7, minRound = 3, classes = WARRIOR, shape = S.L, tags = { "arms", "melee", "strike" },
-  use = { cd = 7, cost = 25, rankCosts = { [2] = 35, [3] = 50 }, resource = "rage", requires = "melee", effects = { { type = "damage", weapon = true, weaponPct = 1.7, min = 14, max = 18, school = "physical", coef = 0.4, perStatus = 0.1 }, { type = "debuff", stat = "healPct", value = 50, duration = 6, key = "mortal_wound", name = "Mortal Wound", rankScale = false } } } }
-H.Ability{ id = 1205, key = "execute", spec = "shared", name = "Execute", icon = I("INV_Sword_48"), quality = 3, cost = 7, minRound = 4, classes = WARRIOR, shape = S.v2, tags = { "arms", "fury", "melee", "finisher" },
-  use = { cd = 2, cost = 15, resource = "rage", spendAll = true, requires = "melee", condition = "enemyBelow20", effects = { { type = "damage", min = 22, max = 28, school = "physical", coef = 0.65, perCombo = 0.03 } } } }
-H.Ability{ id = 1208, key = "bloodthirst", spec = "fury", name = "Bloodthirst", icon = I("Spell_Nature_BloodLust"), quality = 3, cost = 7, minRound = 3, classes = WARRIOR, shape = S.L, tags = { "fury", "melee", "strike", "heal" },
-  use = { cd = 6, cost = 20, resource = "rage", requires = "melee", effects = { { type = "damage", min = 17, max = 21, school = "physical", coef = 0.55 }, { type = "heal", min = 6, max = 8, pctMax = 0.015 } } } }
-H.Ability{ id = 1209, key = "whirlwind", spec = "shared", name = "Whirlwind", icon = I("Ability_Whirlwind"), quality = 3, cost = 8, minRound = 4, classes = WARRIOR, shape = S.sq, tags = { "fury", "melee", "strike" },
-  use = { cd = 5, cost = 20, resource = "rage", requires = "melee", effects = { { type = "damage", weapon = true, weaponPct = 0.85, min = 4, max = 6, school = "physical", coef = 0.16 }, { type = "damage", weapon = true, weaponPct = 0.85, min = 4, max = 6, school = "physical", coef = 0.16 } } } }
-H.Ability{ id = 1211, key = "bloodrage", spec = "shared", name = "Bloodrage", icon = I("Ability_Racial_BloodRage"), quality = 1, classes = WARRIOR, shape = S.v2, tags = { "fury", "arms", "prot" }, rankable = false,
-  use = { cd = 10, initialDelay = 1, healthCostPct = 0.06, effects = { { type = "resource", resource = "rage", amount = 22 } } } }
-H.Ability{ id = 1215, key = "flurry", spec = "fury", name = "Flurry", icon = I("Ability_GhoulFrenzy"), quality = 2, minRound = 2, classes = WARRIOR, shape = S.v2, tags = { "fury" }, stats = { crit = 4 },
-  triggers = { { on = "anyCrit", healing = false, match = { tag = "melee" }, effects = { { type = "buff", stat = "haste", value = 25, duration = 4, target = "all", match = { kind = "weapon", tag = "melee", anyTag = { "autoattack" } }, key = "flurry", name = "Flurry" } } } } }
-H.Ability{ id = 1217, key = "death_wish", spec = "fury", name = "Death Wish", icon = I("Spell_Shadow_DeathPact"), quality = 3, cost = 7, minRound = 4, classes = WARRIOR, shape = S.v2, tags = { "fury" },
-  triggers = { { on = "battleStart", effects = { { type = "buff", stat = "dmgPct", value = 100, missingHealth = true, duration = 120, key = "death_wish", name = "Death Wish" }, { type = "buff", stat = "dr", value = -20, duration = 120, key = "death_wish_risk", name = "Death Wish" } } } } }
-H.Ability{ id = 1218, key = "recklessness", spec = "fury", name = "Recklessness", icon = I("Ability_CriticalStrike"), quality = 4, cost = 10, minRound = 7, classes = WARRIOR, shape = S.v2, tags = { "fury" }, rankable = false,
-  use = { cd = 18, initialDelay = 2, effects = { { type = "buff", stat = "crit", value = 60, duration = 6, key = "recklessness", name = "Recklessness" }, { type = "buff", stat = "critDamage", value = 30, duration = 6, key = "recklessness_damage", name = "Recklessness" }, { type = "buff", stat = "dr", value = -15, duration = 6, key = "recklessness_risk", name = "Recklessness" } } } }
-H.Ability{ id = 1219, key = "shield_block", spec = "prot", name = "Shield Block", icon = I("Ability_Defend"), quality = 1, classes = WARRIOR, shape = S.v2, tags = { "prot", "defensive" },
-  use = { reactive = true, cd = 8, cost = 10, resource = "rage", requires = "shield", effects = { { type = "buff", stat = "blockChance", value = 40, duration = 5, key = "shield_block", name = "Shield Block" } } } }
-H.Ability{ id = 1220, key = "shield_slam", spec = "prot", name = "Shield Slam", icon = I("INV_Shield_05"), quality = 3, cost = 7, minRound = 3, classes = WARRIOR, shape = S.L, tags = { "prot", "melee", "strike" },
-  use = { cd = 7, cost = 20, resource = "rage", requires = "shield", effects = { { type = "damage", min = 16, max = 20, school = "physical", coef = 0.3, spendBank = "blocked", bankScale = 1.5 } } },
-  triggers = { { on = "block", effects = { { type = "bank", key = "blocked", fraction = 1 } } } } }
-H.Ability{ id = 1221, key = "revenge", spec = "prot", name = "Revenge", icon = I("Ability_Warrior_Revenge"), quality = 1, classes = WARRIOR, shape = S.v2, tags = { "prot", "melee", "strike" }, rankable = true,
-  triggers = { { on = "block", icd = 2, effects = { { type = "damage", min = 6, max = 9, school = "physical", coef = 0.2 } } }, { on = "dodged", icd = 2, effects = { { type = "damage", min = 6, max = 9, school = "physical", coef = 0.2 } } } } }
-H.Ability{ id = 1222, key = "sunder_armor", spec = "shared", name = "Sunder Armor", icon = I("Ability_Warrior_Sunder"), quality = 1, classes = WARRIOR, shape = S.v2, tags = { "prot", "arms", "melee" },
-  use = { cd = 5, cost = 10, resource = "rage", requires = "melee", effects = { { type = "debuff", stat = "armor", value = 12, duration = 20, stack = true, maxStacks = 5, key = "sunder", name = "Sunder Armor" } } },
-  adjacency = { { side = "front", match = { kind = "ability", tag = "strike", damaging = "direct" }, mods = { haste = 12.5 } } } }
-H.Ability{ id = 1231, key = "deep_wounds", spec = "arms", name = "Deep Wounds", icon = I("Ability_BackStab"), quality = 1, classes = WARRIOR, shape = S.v2, tags = { "arms", "bleed" }, stats = { crit = 5 },
-  triggers = { { on = "anyCrit", healing = false, match = { tag = "melee" }, effects = { { type = "dot", key = "deep_wounds", school = "physical", duration = 6, rolling = true, fromEvent = 0.3 } } } } }
-H.Ability{ id = 1238, key = "blood_craze", spec = "fury", name = "Blood Craze", icon = I("Spell_Shadow_SummonImp"), quality = 1, classes = WARRIOR, shape = S.v2, tags = { "fury", "heal", "hot" },
-  triggers = { { on = "damaged", critical = true, icd = 6, effects = { { type = "hot", key = "blood_craze", tick = 1, coef = 0.1, powerStat = "ap", duration = 4, preserveTicks = true } } } } }
-H.Ability{ id = 1239, key = "impale", spec = "arms", name = "Impale", icon = I("Ability_SearingArrow"), quality = 3, minRound = 4, classes = WARRIOR, shape = S.v2, tags = { "arms", "bleed" }, rankable = false,
-  triggers = { { on = "dotTick", match = { tag = "bleed" }, every = 3, icd = 4, effects = { { type = "buff", stat = "critDamage", value = 30, duration = 5, charges = 1, target = "all", match = { tag = "strike" }, paidOnly = true, key = "impale_opening", name = "Impale" } } } } }
 
-H.Ability{ id = 1250, key = "battle_shout", spec = "shared", name = "Battle Shout", icon = I("ability_warrior_battleshout"), quality = 2, cost = 5, minRound = 2, classes = WARRIOR, shape = S.v2, tags = { "arms", "fury", "shout" },
-  use = { cd = 15, cost = 10, resource = "rage", effects = { { type = "buff", stat = "ap", value = 24, duration = 12, key = "battle_shout", name = "Battle Shout" } } } }
-H.Ability{ id = 1251, key = "unbridled_wrath", spec = "fury", name = "Unbridled Wrath", icon = I("spell_nature_stoneclawtotem"), quality = 3, cost = 7, minRound = 4, classes = WARRIOR, shape = S.v2, tags = { "fury" }, rankable = false,
-  triggers = { { on = "anyCrit", healing = false, match = { tag = "autoattack" }, effects = { { type = "resource", resource = "rage", amount = 8 } } } } }
-H.Ability{ id = 1252, key = "improved_execute", spec = "fury", shopRequires = { "execute" }, name = "Improved Execute", icon = I("inv_sword_48"), quality = 3, cost = 8, minRound = 5, classes = WARRIOR, shape = S.L, tags = { "arms", "fury" }, rankable = false,
-  triggers = { { on = "anyCrit", healing = false, match = { tag = "strike" }, condition = "resourceAtLeast:rage:60", effects = { { type = "cast", key = "execute" } } } } }
-H.Ability{ id = 1253, key = "concussion_blow", spec = "prot", name = "Concussion Blow", icon = I("ability_thunderbolt"), quality = 3, cost = 8, minRound = 6, classes = WARRIOR, shape = S.L, tags = { "prot", "melee" }, rankable = false,
-  use = { cd = 10, cost = 20, resource = "rage", requires = "melee", effects = { { type = "stun", duration = 1.5 }, { type = "buff", stat = "none", value = 0, free = true, match = { tag = "strike" }, duration = 8, key = "concussion_blow", name = "Concussion Blow", cond = "enemyBleeding" } } } }
-H.Ability{ id = 1254, key = "sword_specialization", spec = "arms", name = "Sword Specialization", icon = I("inv_sword_27"), quality = 4, cost = 10, minRound = 7, classes = WARRIOR, shape = S.L, tags = { "arms", "fury" }, rankable = false,
-  triggers = { { on = "anyHit", match = { weaponType = "sword" }, chance = 20, effects = { { type = "extraAttack", count = 2 } } } } }
-H.Ability{ id = 1255, key = "anger_management", spec = "arms", name = "Anger Management", icon = I("spell_holy_blessingofstamina"), quality = 4, cost = 10, minRound = 7, classes = WARRIOR, shape = S.v3, tags = { "arms", "fury", "heal" }, rankable = false,
-  triggers = { { on = "resourceOverflow", resource = "rage", everyAmount = 20, icd = 1, effects = { { type = "heal", pctMax = 0.005 } } } } }
-H.Ability{ id = 1256, key = "retaliation", spec = "shared", shopRequires = { "heroic_strike" }, name = "Retaliation", icon = I("ability_warrior_challange"), quality = 4, cost = 11, minRound = 8, classes = WARRIOR, shape = S.sq, tags = { "arms", "prot", "melee" }, rankable = false,
-  use = { cd = 20, cost = 30, resource = "rage", requires = "melee", effects = { { type = "buff", stat = "none", value = 0, duration = 6, key = "retaliation", name = "Retaliation" } } },
-  triggers = { { on = "damaged", matchAttacker = { tag = "melee" }, condition = "buff:retaliation", effects = { { type = "cast", key = "heroic_strike" } } } } }
-H.Ability{ id = 1257, key = "enrage", spec = "fury", name = "Enrage", icon = I("spell_shadow_unholyfrenzy"), quality = 4, cost = 10, minRound = 8, classes = WARRIOR, shape = S.v3, tags = { "fury" }, rankable = false,
-  use = { cd = 3, condition = "resourceAtLeast:rage:60", effects = { { type = "buff", stat = "dmgPct", value = 50, duration = 4, key = "enrage", name = "Enrage" } } } }
-H.Ability{ id = 1258, key = "sweeping_strikes", spec = "arms", name = "Sweeping Strikes", icon = I("ability_rogue_slicedice"), quality = 5, cost = 15, minRound = 9, classes = WARRIOR, shape = S.sq, tags = { "arms", "fury" }, rankable = false,
-  triggers = { { on = "resourceSpent", resource = "rage", everyAmount = 40, effects = { { type = "cast", target = "neighbors", match = { tag = "strike" } } } } } }
-H.Ability{ id = 1259, key = "last_stand", spec = "prot", name = "Last Stand", icon = I("spell_holy_ashestoashes"), quality = 5, cost = 14, minRound = 10, classes = WARRIOR, shape = S.L, tags = { "prot", "fury", "heal" }, rankable = false,
-  triggers = { { on = "lowHealth", effects = { { type = "heal", pctMax = 0.5 }, { type = "resource", resource = "rage", amount = 100 }, { type = "extraAttack", count = 3 } } } } }
+ability(1200, "heroic_strike", "Heroic Strike", "shared", "Ability_Rogue_Ambush", 1, {
+  tags = { "arms", "fury", "melee", "strike" },
+  use = { cost = 10, cd = 2.8, resource = "rage", requires = "melee", effects = { { type = "damage", coef = 0.25, min = 2, max = 3, school = "physical", weapon = true, weaponPct = 0.8 } } },
+})
 
-H.Ability{ id = 1260, key = "slam", spec = "arms", name = "Slam", icon = I("ability_warrior_decisivestrike"), quality = 2, cost = 5, minRound = 2, classes = WARRIOR, shape = S.v3, tags = { "arms", "melee", "strike" },
-  use = { cd = 6, cost = 20, resource = "rage", requires = { "melee", "twohand" }, effects = { { type = "damage", weapon = true, weaponPct = 2.2, min = 4, max = 6, school = "physical", coef = 0.15 } } } }
-H.Ability{ id = 1261, key = "improved_slam", spec = "fury", shopRequires = { "slam" }, name = "Improved Slam", icon = I("ability_warrior_decisivestrike"), quality = 3, cost = 7, minRound = 4, classes = WARRIOR, shape = S.v2, tags = { "fury" }, passiveTriggers = true,
-  adjacency = { { match = { key = "slam" }, mods = { haste = 30, costPct = -25 } } } }
-H.Ability{ id = 1262, key = "tactical_mastery", spec = "arms", name = "Tactical Mastery", icon = I("spell_nature_enchantarmor"), quality = 4, cost = 10, minRound = 7, classes = WARRIOR, shape = S.v2, tags = { "arms" },
-  triggers = { { on = "resourceOverflow", resource = "rage", everyAmount = 20, icd = 1, effects = { { type = "buff", stat = "none", free = true, match = { tag = "strike" }, duration = 8, key = "tactical_mastery", name = "Tactical Mastery" } } } } }
-H.Ability{ id = 1263, key = "piercing_howl", spec = "fury", name = "Piercing Howl", icon = I("spell_shadow_deathscream"), quality = 2, cost = 5, minRound = 3, classes = WARRIOR, shape = S.v2, tags = { "fury", "shout" }, rankable = false,
-  use = { cd = 8, cost = 10, resource = "rage", effects = { { type = "debuff", stat = "haste", value = 25, duration = 4, key = "piercing_howl", name = "Piercing Howl" } } } }
-H.Ability{ id = 1264, key = "berserker_rage", spec = "fury", name = "Berserker Rage", icon = I("spell_nature_ancestralguardian"), quality = 1, cost = 3, classes = WARRIOR, shape = S.v2, tags = { "fury" }, rankable = false,
-  use = { cd = 14, initialDelay = 2, effects = { { type = "resource", resource = "rage", amount = 18 }, { type = "buff", stat = "rageTakenPct", value = 50, duration = 5, key = "berserker_rage", name = "Berserker Rage" } } } }
-H.Ability{ id = 1265, key = "dual_wield_specialization", spec = "fury", name = "Dual Wield Specialization", icon = I("ability_dualwield"), quality = 3, cost = 7, minRound = 4, classes = WARRIOR, shape = S.v2, tags = { "fury" },
-  triggers = { { on = "battleStart", condition = "dualwield", effects = { { type = "buff", stat = "haste", value = 20, duration = 120, target = "all", match = { kind = "weapon", tag = "melee", anyTag = { "autoattack" } }, key = "dual_wield_specialization", name = "Dual Wield Specialization" } } } } }
-H.Ability{ id = 1266, key = "shield_wall", spec = "prot", name = "Shield Wall", icon = I("ability_warrior_shieldwall"), quality = 4, cost = 10, minRound = 7, classes = WARRIOR, shape = S.L, tags = { "prot", "defensive" }, rankable = false,
-  use = { reactive = true, cd = 20, cost = 15, resource = "rage", requires = "shield", condition = "below50", effects = { { type = "buff", stat = "dr", value = 40, duration = 5, key = "shield_wall", name = "Shield Wall" } } } }
-H.Ability{ id = 1700, key = "charge", spec = "shared", name = "Charge", icon = I("ability_warrior_charge"), quality = 2, cost = 5, minRound = 2, classes = WARRIOR, shape = S.v2, tags = { "arms", "fury", "prot" }, rankable = false,
-  triggers = { { on = "battleStart", effects = { { type = "resource", resource = "rage", amount = 25 }, { type = "cdr", target = "neighbors", match = { tag = "strike" }, amount = 2 } } } } }
-H.Ability{ id = 1701, key = "cleave", spec = "arms", name = "Cleave", icon = I("ability_warrior_cleave"), quality = 4, cost = 10, minRound = 7, classes = WARRIOR, shape = S.L, tags = { "arms", "fury", "melee", "strike" },
-  use = { cd = 7, cost = 30, resource = "rage", requires = "melee", effects = { { type = "damage", weapon = true, weaponPct = 1.4, min = 8, max = 12, school = "physical", coef = 0.2 } } },
-  adjacency = { { side = "left", empty = true, selfMods = { dmgPct = 10 } }, { side = "right", empty = true, selfMods = { dmgPct = 10 } } } }
-H.Ability{ id = 1702, key = "disarm", spec = "shared", name = "Disarm", icon = I("ability_warrior_disarm"), quality = 3, cost = 7, minRound = 4, classes = WARRIOR, shape = S.v2, tags = { "arms", "prot", "defensive" }, rankable = false,
-  use = { cd = 16, cost = 15, resource = "rage", requires = "melee", effects = { { type = "debuff", stat = "meleePct", value = 35, duration = 6, key = "disarm", name = "Disarm" } } } }
-H.Ability{ id = 1703, key = "shield_bash", spec = "prot", name = "Shield Bash", icon = I("ability_warrior_shieldbash"), quality = 2, cost = 5, minRound = 2, classes = WARRIOR, shape = S.v2, tags = { "prot", "melee", "strike" }, shopWeight = 1.5,
-  use = { cd = 10, cost = 10, resource = "rage", requires = "shield", effects = { { type = "damage", min = 8, max = 12, school = "physical", coef = 0.25, blockScale = 2 }, { type = "purge", count = 1 } } } }
+ability(1201, "rend", "Rend", "arms", "Ability_Gouge", 1, {
+  tags = { "arms", "melee", "bleed", "dot" },
+  use = { cost = 5, cd = 9, resource = "rage", requires = "melee", effects = { { type = "dot", key = "rend", coef = 0.1, tick = 1, school = "physical", duration = 9, preserveTicks = true } } },
+  shopWeight = 1.4,
+})
 
-H.Ability{ id = 1900, key = "hamstring", spec = "arms", name = "Hamstring", icon = I("ability_shockwave"), quality = 1, cost = 3, classes = WARRIOR, shape = S.v2, tags = { "arms", "melee", "strike" },
-  use = { cd = 8, cost = 8, resource = "rage", requires = "melee", effects = { { type = "damage", min = 2, max = 4, school = "physical", coef = 0.1 }, { type = "debuff", stat = "haste", value = 15, duration = 8, key = "hamstring", name = "Hamstring" }, { type = "buff", stat = "crit", value = 8, duration = 8, key = "hamstring_opening", name = "Hamstring", cond = "enemyBleeding" } } } }
-H.Ability{ id = 1901, key = "mace_specialization", spec = "arms", name = "Mace Specialization", icon = I("inv_mace_01"), quality = 3, cost = 7, minRound = 4, classes = WARRIOR, shape = S.v2, tags = { "arms" }, rankable = false,
-  triggers = { { on = "anyHit", match = { weaponType = "mace" }, chance = 15, effects = { { type = "stun", duration = 1 } } } } }
-H.Ability{ id = 1902, key = "axe_specialization", spec = "arms", name = "Axe Specialization", icon = I("inv_axe_06"), quality = 3, cost = 7, minRound = 5, classes = WARRIOR, shape = S.v2, tags = { "arms" }, rankable = false,
-  triggers = { { on = "anyCrit", healing = false, match = { weaponType = "axe" }, effects = { { type = "tickDots", match = { tag = "bleed" } } } } } }
-H.Ability{ id = 1903, key = "improved_overpower", spec = "arms", shopRequires = { "overpower", "mortal_strike" }, name = "Improved Overpower", icon = I("inv_sword_05"), quality = 4, cost = 10, minRound = 7, classes = WARRIOR, shape = S.L, tags = { "arms" }, rankable = false,
-  triggers = { { on = "anyCrit", healing = false, match = { key = "overpower" }, effects = { { type = "cast", key = "mortal_strike" } } } } }
-H.Ability{ id = 1904, key = "improved_rend", spec = "arms", shopRequires = { "rend" }, name = "Improved Rend", icon = I("ability_gouge"), quality = 2, cost = 5, minRound = 3, classes = WARRIOR, shape = S.v2, tags = { "arms" }, rankable = false,
-  triggers = { { on = "dotTick", match = { tag = "bleed" }, everyAmount = 18, effects = { { type = "resource", resource = "rage", amount = 3 }, { type = "cdr", target = "all", match = { key = "slam" }, amount = 1 } } } } }
+ability(1203, "overpower", "Overpower", "arms", "Ability_MeleeDamage", 2, {
+  shape = S.v2, tags = { "arms", "melee", "strike" },
+  triggers = { { on = "targetDodged", effects = { { type = "damage", coef = 0.3, min = 1, max = 3, school = "physical", critBonus = 25, noDodge = true, weapon = true, weaponPct = 0.8 } } } },
+})
 
-H.Ability{ id = 1905, key = "demoralizing_shout", spec = "fury", name = "Demoralizing Shout", icon = I("ability_warrior_warcry"), quality = 1, cost = 3, classes = WARRIOR, shape = S.v2, tags = { "fury", "shout" },
-  use = { cd = 12, cost = 10, resource = "rage", effects = { { type = "debuff", stat = "ap", value = 16, duration = 10, key = "demoralizing_shout", name = "Demoralizing Shout" }, { type = "debuff", stat = "dmgPct", value = 12, duration = 8, key = "demoralizing_shout_damage", name = "Demoralizing Shout" } } } }
-H.Ability{ id = 1906, key = "cruelty", spec = "fury", name = "Cruelty", icon = I("ability_rogue_eviscerate"), quality = 3, cost = 7, minRound = 4, classes = WARRIOR, shape = S.v2, tags = { "fury", "heal" }, rankable = false,
-  triggers = { { on = "anyCrit", healing = false, match = { tag = "melee" }, condition = "enemyBleeding", effects = { { type = "heal", fromEvent = 0.15 } } } } }
-H.Ability{ id = 1907, key = "pummel", spec = "fury", name = "Pummel", icon = I("inv_gauntlets_04"), quality = 4, cost = 10, minRound = 7, classes = WARRIOR, shape = S.v2, tags = { "fury", "melee", "strike" },
-  use = { cd = 9, cost = 15, resource = "rage", requires = "melee", effects = { { type = "damage", min = 6, max = 9, school = "physical", coef = 0.12 }, { type = "drain", resource = "mana", amount = 15 }, { type = "debuff", stat = "spellPct", value = 20, duration = 5, key = "pummel", name = "Pummel" } } } }
-H.Ability{ id = 1908, key = "improved_berserker_rage", spec = "fury", shopRequires = { "berserker_rage" }, name = "Improved Berserker Rage", icon = I("spell_nature_ancestralguardian"), quality = 5, cost = 15, minRound = 10, classes = WARRIOR, shape = S.sq, tags = { "fury" }, rankable = false,
-  triggers = { { on = "resourceGained", resource = "rage", condition = "buff:berserker_rage", everyAmount = 25, effects = { { type = "extraAttack", count = 1 } } } } }
+ability(1204, "mortal_strike", "Mortal Strike", "arms", "Ability_Warrior_SavageBlow", 3, {
+  minRound = 3, shape = S.L, tags = { "arms", "melee", "strike" },
+  use = {
+    cost = 25, cd = 7, resource = "rage", requires = "melee",
+    effects = {
+      { type = "damage", coef = 0.6, min = 3, max = 5, school = "physical", perStatus = 0.1, weapon = true, weaponPct = 1.2 },
+      { type = "debuff", key = "mortal_wound", name = "Mortal Wound", stat = "healPct", value = 50, duration = 6, rankScale = false },
+    },
+    rankCosts = { [2] = 35, [3] = 50 },
+  },
+  shopWeight = 2,
+})
 
-H.Ability{ id = 1909, key = "thunder_clap", spec = "prot", name = "Thunder Clap", icon = I("spell_nature_thunderclap"), quality = 2, cost = 5, minRound = 2, classes = WARRIOR, shape = S.v2, tags = { "prot", "melee", "spell" },
-  use = { cd = 8, cost = 12, resource = "rage", effects = { { type = "damage", min = 4, max = 6, school = "physical", coef = 0.15, noDodge = true }, { type = "debuff", stat = "haste", value = 20, duration = 6, key = "thunder_clap", name = "Thunder Clap" } } } }
-H.Ability{ id = 1910, key = "defensive_stance", spec = "prot", name = "Defensive Stance", icon = I("ability_warrior_defensivestance"), quality = 1, cost = 3, classes = WARRIOR, shape = S.v2, tags = { "prot", "defensive" }, rankable = false, exclusiveGroup = "warrior_stance", exclusiveLabel = "Stance",
-  stats = { dr = 12, dmgPct = -8 },
-  adjacency = { { corners = true, match = { tag = "defensive" }, mods = { costPct = -20 } } } }
-H.Ability{ id = 1911, key = "defiance", spec = "prot", name = "Defiance", icon = I("ability_warrior_innerrage"), quality = 3, cost = 7, minRound = 4, classes = WARRIOR, shape = S.v2, tags = { "prot" }, rankable = false,
-  triggers = { { on = "block", effects = { { type = "buff", stat = "ap", value = 0, fromEvent = 0.75, duration = 6, key = "defiance", name = "Defiance", stack = true, maxStacks = 5 } } } } }
-H.Ability{ id = 1912, key = "improved_shield_block", spec = "prot", shopRequires = { "shield_block" }, name = "Improved Shield Block", icon = I("ability_defend"), quality = 2, cost = 5, minRound = 3, classes = WARRIOR, shape = S.v2, tags = { "prot" }, rankable = false,
-  triggers = { { on = "block", condition = "buff:shield_block", effects = { { type = "resource", resource = "rage", amount = 4 }, { type = "cdr", target = "all", match = { key = "shield_slam" }, amount = 0.5 } } } } }
-H.Ability{ id = 1913, key = "improved_revenge", spec = "prot", shopRequires = { "revenge" }, name = "Improved Revenge", icon = I("ability_warrior_revenge"), quality = 3, cost = 7, minRound = 5, classes = WARRIOR, shape = S.v2, tags = { "prot" }, rankable = false,
-  triggers = { { on = "anyHit", match = { key = "revenge" }, chance = 25, effects = { { type = "stun", duration = 1 } } } } }
-H.Ability{ id = 1914, key = "improved_shield_wall", spec = "prot", shopRequires = { "shield_wall" }, name = "Improved Shield Wall", icon = I("ability_warrior_shieldwall"), quality = 4, cost = 10, minRound = 8, classes = WARRIOR, shape = S.v2, tags = { "prot", "heal" }, rankable = false,
-  triggers = { { on = "anyUse", match = { key = "shield_wall" }, effects = { { type = "heal", pctMax = 0.2 }, { type = "cleanse", count = 2 } } } } }
-H.Ability{ id = 1915, key = "shield_specialization", spec = "prot", name = "Shield Specialization", icon = I("inv_shield_06"), quality = 5, cost = 15, minRound = 11, classes = WARRIOR, shape = S.sq, tags = { "prot", "melee" }, rankable = false,
-  triggers = { { on = "block", effects = { { type = "cast", key = "shield_block" }, { type = "damage", school = "physical", fromEvent = 0.75, noDodge = true, noCrit = true } } } } }
-H.Ability{ id = 1916, key = "iron_will", spec = "prot", name = "Iron Will", icon = I("spell_magic_magearmor"), quality = 4, cost = 10, minRound = 7, classes = WARRIOR, shape = S.v2, tags = { "prot", "defensive" }, rankable = false,
-  triggers = { { on = "stunned", effects = { { type = "buff", stat = "dr", value = 50, duration = 3, key = "iron_will", name = "Iron Will" }, { type = "resource", resource = "rage", amount = 15 } } } } }
-H.Ability{ id = 1917, key = "warrior_anticipation", spec = "prot", name = "Anticipation", icon = I("spell_nature_mirrorimage"), quality = 2, cost = 5, minRound = 2, classes = WARRIOR, shape = S.v2, tags = { "prot", "defensive" }, rankable = false,
-  stats = { dodge = 3, blockChance = 5 },
-  triggers = { { on = "dodged", effects = { { type = "cdr", target = "all", match = { key = "revenge" }, amount = 1, clampReady = true } } } } }
+ability(1205, "execute", "Execute", "shared", "INV_Sword_48", 3, {
+  tags = { "arms", "fury", "melee", "finisher" },
+  use = {
+    cost = 15, cd = 2, resource = "rage", requires = "melee", condition = "enemyBelow20",
+    effects = { { type = "damage", coef = 0.95, min = 4, max = 6, school = "physical", perCombo = 0.03 } }, spendAll = true,
+  },
+})
 
--- Classic Warrior alternatives. Curated training is assigned in WarriorProgression.
-H.Ability{ id = 1923, key = "berserker_stance", spec = "fury", name = "Berserker Stance", icon = I("ability_racial_avatar"), quality = 3, cost = 7, minRound = 4, classes = WARRIOR, shape = S.v3, tags = { "fury", "stance" }, rankable = false, shopWeight = 0.6, exclusiveGroup = "warrior_stance", exclusiveLabel = "Stance", stats = { dr = -10 },
-  triggers = { { on = "battleStart", effects = { { type = "buff", stat = "crit", value = 3, gearCoef = 0.25, gearStat = "crit", gearCap = 6, duration = 120, key = "berserker_stance", name = "Berserker Stance", rankScale = false } } } } }
+ability(1208, "bloodthirst", "Bloodthirst", "fury", "Spell_Nature_BloodLust", 3, {
+  minRound = 3, shape = S.L, tags = { "fury", "melee", "strike", "heal" },
+  use = {
+    cost = 20, cd = 6, resource = "rage", requires = "melee",
+    effects = { { type = "damage", coef = 0.6, min = 2, max = 4, school = "physical" }, { type = "heal", coef = 0.05, min = 1, max = 2, pctMax = 0.0075, powerStat = "ap" } },
+  },
+  shopWeight = 2.2,
+})
 
-H.Ability{ id = 1930, key = "battle_stance", spec = "shared", name = "Battle Stance", icon = I("ability_warrior_offensivestance"), quality = 2, cost = 5, minRound = 2, classes = WARRIOR, shape = S.L, tags = { "arms", "fury", "stance" }, rankable = false, shopWeight = 0.8,
-  exclusiveGroup = "warrior_stance", exclusiveLabel = "Stance",
-  triggers = { { on = "targetDodged", match = { kind = "weapon", tag = "melee", anyTag = { "autoattack" } }, icd = 2,
-    effects = { { type = "resource", resource = "rage", amount = 4, rankScale = false },
-      { type = "cdr", target = "all", match = { kind = "ability", tag = "melee", anyTag = { "strike" }, damaging = "direct" }, amount = 0.5 } } } } }
+ability(1209, "whirlwind", "Whirlwind", "shared", "Ability_Whirlwind", 3, {
+  shape = S.sq, tags = { "fury", "melee", "strike" },
+  use = {
+    cost = 20, cd = 5, resource = "rage", requires = "melee",
+    effects = {
+      { type = "damage", coef = 0.2, min = 1, max = 2, school = "physical", weapon = true, weaponPct = 0.65 },
+      { type = "damage", coef = 0.2, min = 1, max = 2, school = "physical", weapon = true, weaponPct = 0.65 },
+    },
+  },
+})
 
-H.Ability{ id = 1931, key = "intercept", spec = "fury", name = "Intercept", icon = I("ability_rogue_sprint"), quality = 2, cost = 5, minRound = 3, classes = WARRIOR, shape = S.h2, tags = { "arms", "fury", "melee", "strike", "control" }, rankable = false, shopWeight = 1.2,
-  shopAffinities = { WARRIOR = { fury = 1, arms = 0.8, prot = 0.4 } },
-  use = { cd = 14, cost = 15, resource = "rage", requires = "melee", effects = { { type = "damage", weapon = true, weaponPct = 1, min = 1, max = 3, school = "physical", coef = 0.35 }, { type = "stun", duration = 0.5, rankScale = false } } },
-  adjacency = { { side = "front", empty = true, selfMods = { dmgPct = 10 } } } }
-H.Ability{ id = 1932, key = "intimidating_shout", spec = "shared", name = "Intimidating Shout", icon = I("ability_golemthunderclap"), quality = 3, cost = 7, minRound = 4, classes = WARRIOR, shape = { "10", "10", "11" }, tags = { "arms", "fury", "prot", "shout", "defensive", "control" }, rankable = false, shopWeight = 0.8,
-  use = { reactive = true, cd = 18, cost = 20, resource = "rage", condition = "below50", effects = { { type = "stun", controlType = "fear", duration = 1, rankScale = false } } } }
-H.Ability{ id = 1933, key = "one_handed_weapon_specialization", spec = "prot", name = "One-Handed Weapon Specialization", icon = I("inv_sword_20"), quality = 2, cost = 5, minRound = 3, classes = WARRIOR, shape = S.L, tags = { "prot", "fury" }, rankable = false, shopWeight = 0.9,
-  shopAffinities = { WARRIOR = { prot = 1, fury = 0.8, arms = 0.3 } },
-  adjacency = { { corners = true, match = { kind = "weapon", tag = "melee", hands = 1 }, mods = { dmgPct = 12.5 } } } }
-H.Ability{ id = 1934, key = "two_handed_weapon_specialization", spec = "arms", name = "Two-Handed Weapon Specialization", icon = I("inv_axe_09"), quality = 2, cost = 5, minRound = 3, classes = WARRIOR, shape = { "111" }, tags = { "arms", "fury" }, rankable = false, shopWeight = 0.9,
-  shopAffinities = { WARRIOR = { arms = 1, fury = 0.8 } },
-  adjacency = { { side = "back", match = { kind = "weapon", tag = "melee", hands = 2 }, mods = { dmgPct = 25 } } } }
-H.Ability{ id = 1935, key = "deflection", spec = "arms", name = "Deflection", icon = I("ability_parry"), quality = 2, cost = 5, minRound = 2, classes = WARRIOR, shape = S.one, tags = { "arms", "prot", "defensive" }, rankable = false, shopWeight = 1,
-  shopAffinities = { WARRIOR = { prot = 1, arms = 0.8, fury = 0.4 } },
-  adjacency = { { side = "front", match = { kind = "weapon", tag = "melee" }, stats = { dodge = 5 }, once = true } },
-  triggers = { { on = "dodged", icd = 2, effects = { { type = "cdr", target = "all", match = { kind = "weapon", tag = "melee" }, amount = 0.25, clampReady = true } } } } }
-H.Ability{ id = 1936, key = "booming_voice", spec = "fury", name = "Booming Voice", icon = I("spell_nature_purge"), quality = 2, cost = 5, minRound = 2, classes = WARRIOR, shape = S.T, tags = { "fury", "support" }, rankable = false, shopWeight = 0.8,
-  shopAffinities = { WARRIOR = { fury = 1, arms = 0.6, prot = 0.6 } },
-  adjacency = { { side = "front", match = { tag = "shout", notTag = "control" }, mods = { haste = 12.5 } } } }
-H.Ability{ id = 1937, key = "improved_cleave", spec = "fury", name = "Improved Cleave", icon = I("ability_warrior_cleave"), quality = 2, cost = 5, minRound = 3, classes = WARRIOR, shape = S.L, tags = { "fury", "arms", "melee" }, rankable = false, shopWeight = 0.9, shopRequires = { "cleave" },
-  triggers = { { on = "anyHit", match = { key = "cleave" }, healing = false, effects = { { type = "damage", weapon = true, weaponPct = 0.25, school = "physical", noOwnTriggers = true, noDodge = true, noCrit = true } } } } }
-H.Ability{ id = 1938, key = "improved_bloodrage", spec = "prot", name = "Improved Bloodrage", icon = I("ability_racial_bloodrage"), quality = 2, cost = 4, minRound = 2, classes = WARRIOR, shape = S.one, tags = { "prot", "arms", "fury" }, rankable = false, shopWeight = 0.9, shopRequires = { "bloodrage" },
-  shopAffinities = { WARRIOR = { fury = 1, arms = 0.8, prot = 0.6 } },
-  triggers = { { on = "anyUse", match = { key = "bloodrage" }, effects = { { type = "resource", resource = "rage", amount = 4 } } } } }
-H.Ability{ id = 1939, key = "toughness", spec = "prot", name = "Toughness", icon = I("spell_holy_devotion"), quality = 2, cost = 5, minRound = 3, classes = WARRIOR, shape = S.T, tags = { "prot", "defensive" }, rankable = false, shopWeight = 1,
-  shopAffinities = { WARRIOR = { prot = 1, arms = 0.6, fury = 0.3 } },
-  triggers = { { on = "battleStart", effects = { { type = "buff", stat = "armor", value = 0, gearCoef = 0.15, gearStat = "armor", gearCap = 30, duration = 120, key = "toughness", name = "Toughness", rankScale = false } } } } }
-H.Ability{ id = 1940, key = "improved_shield_bash", spec = "prot", name = "Improved Shield Bash", icon = I("ability_warrior_shieldbash"), quality = 3, cost = 7, minRound = 4, classes = WARRIOR, shape = { "110", "011" }, tags = { "prot", "defensive", "support" }, rankable = false, shopWeight = 0.9, shopRequires = { "shield_bash" },
-  triggers = { { on = "anyHit", match = { key = "shield_bash" }, healing = false, icd = 8, effects = { { type = "debuff", stat = "spellPct", value = 25, duration = 3, key = "improved_shield_bash", name = "Improved Shield Bash", rankScale = false } } } } }
+ability(1211, "bloodrage", "Bloodrage", "shared", "Ability_Racial_BloodRage", 1, {
+  tags = { "fury", "arms", "prot" },
+  use = { cd = 10, initialDelay = 1, effects = { { type = "resource", resource = "rage", amount = 22 } }, healthCostPct = 0.06 }, rankable = false,
+  shopWeight = 1.4,
+})
+
+ability(1215, "flurry", "Flurry", "fury", "Ability_GhoulFrenzy", 2, {
+  shape = S.v2, tags = { "fury" }, stats = { crit = 4 },
+  triggers = {
+    {
+      on = "anyCrit", match = { tag = "melee" },
+      effects = { { type = "buff", key = "flurry", name = "Flurry", target = "all", match = { kind = "weapon", anyTag = { "autoattack" }, tag = "melee" }, stat = "haste", value = 25, duration = 4 } },
+      healing = false,
+    },
+  },
+})
+
+ability(1217, "death_wish", "Death Wish", "fury", "Spell_Shadow_DeathPact", 3, {
+  shape = S.v2, tags = { "fury" },
+  triggers = {
+    {
+      on = "battleStart",
+      effects = {
+        { type = "buff", key = "death_wish", name = "Death Wish", stat = "dmgPct", value = 75, duration = 120, missingHealth = true },
+        { type = "buff", key = "death_wish_risk", name = "Death Wish", stat = "dr", value = -20, duration = 120 },
+      },
+    },
+  },
+})
+
+ability(1218, "recklessness", "Recklessness", "fury", "Ability_CriticalStrike", 4, {
+  tags = { "fury" },
+  use = {
+    cd = 18, initialDelay = 2,
+    effects = {
+      { type = "buff", key = "recklessness", name = "Recklessness", stat = "crit", value = 60, duration = 6 },
+      { type = "buff", key = "recklessness_damage", name = "Recklessness", stat = "critDamage", value = 30, duration = 6 },
+      { type = "buff", key = "recklessness_risk", name = "Recklessness", stat = "dr", value = -15, duration = 6 },
+    },
+  },
+  rankable = false,
+})
+
+ability(1219, "shield_block", "Shield Block", "prot", "Ability_Defend", 1, {
+  tags = { "prot", "defensive" },
+  use = {
+    cost = 10, cd = 8, reactive = true, resource = "rage", requires = "shield",
+    effects = { { type = "buff", key = "shield_block", name = "Shield Block", stat = "blockChance", value = 40, duration = 5 } },
+  },
+  shopWeight = 1.4,
+})
+
+ability(1220, "shield_slam", "Shield Slam", "prot", "INV_Shield_05", 3, {
+  minRound = 3, shape = S.L, tags = { "prot", "melee", "strike" },
+  use = {
+    cost = 20, cd = 7, resource = "rage", requires = "shield",
+    effects = { { type = "damage", coef = 0.6, min = 2, max = 4, school = "physical", bankScale = 1, blockScale = 3, spendBank = "blocked" } },
+  },
+  triggers = { { on = "block", effects = { { type = "bank", key = "blocked", cap = { block = 2, hp = 0.25 }, fraction = 1 } } } }, shopWeight = 1.8,
+})
+
+ability(1221, "revenge", "Revenge", "prot", "Ability_Warrior_Revenge", 1, {
+  shape = S.v2, tags = { "prot", "melee", "strike" },
+  triggers = {
+    { on = "block", icd = 2, effects = { { type = "damage", coef = 0.3, min = 1, max = 3, school = "physical", blockScale = 0.4 } } },
+    { on = "dodged", icd = 2, effects = { { type = "damage", coef = 0.3, min = 1, max = 3, school = "physical", blockScale = 0.4 } } },
+  },
+})
+
+ability(1222, "sunder_armor", "Sunder Armor", "shared", "Ability_Warrior_Sunder", 1, {
+  tags = { "prot", "arms", "melee" },
+  use = {
+    cost = 10, cd = 5, resource = "rage", requires = "melee",
+    effects = { { type = "debuff", key = "sunder", name = "Sunder Armor", stat = "armor", value = 12, duration = 20, maxStacks = 5, stack = true } },
+  },
+  adjacency = { { match = { kind = "ability", damaging = "direct", tag = "strike" }, mods = { haste = 12.5 }, side = "front" } },
+})
+
+ability(1231, "deep_wounds", "Deep Wounds", "arms", "Ability_BackStab", 1, {
+  shape = S.v2, tags = { "arms", "bleed" }, stats = { crit = 5 },
+  triggers = { { on = "anyCrit", match = { tag = "melee" }, effects = { { type = "dot", key = "deep_wounds", school = "physical", duration = 6, fromEvent = 0.3, rolling = true } }, healing = false } },
+})
+
+
+ability(1238, "blood_craze", "Blood Craze", "fury", "Spell_Shadow_SummonImp", 1, {
+  shape = S.v2, tags = { "fury", "heal", "hot" },
+  triggers = { { on = "damaged", icd = 6, effects = { { type = "hot", key = "blood_craze", coef = 0.1, tick = 1, duration = 4, powerStat = "ap", preserveTicks = true } }, critical = true } },
+})
+
+ability(1239, "impale", "Impale", "arms", "Ability_SearingArrow", 3, {
+  shape = S.v2, tags = { "arms", "bleed" },
+  triggers = {
+    {
+      on = "dotTick", match = { tag = "bleed" }, icd = 4, every = 3,
+      effects = { { type = "buff", key = "impale_opening", name = "Impale", target = "all", match = { tag = "strike" }, stat = "critDamage", value = 30, duration = 5, charges = 1, paidOnly = true } },
+    },
+  },
+})
+
+
+ability(1250, "battle_shout", "Battle Shout", "shared", "ability_warrior_battleshout", 2, {
+  tags = { "arms", "fury", "shout", "prot" },
+  use = { cost = 10, cd = 15, resource = "rage", effects = { { type = "buff", key = "battle_shout", name = "Battle Shout", stat = "ap", value = 0, duration = 12, gearCoef = 0.2 } } },
+})
+
+ability(1251, "unbridled_wrath", "Unbridled Wrath", "fury", "spell_nature_stoneclawtotem", 3, {
+  shape = S.v2, tags = { "fury" },
+  triggers = { { on = "anyCrit", match = { tag = "autoattack" }, effects = { { type = "resource", resource = "rage", amount = 8 } }, healing = false } },
+  rankable = false,
+})
+
+ability(1252, "improved_execute", "Improved Execute", "fury", "inv_sword_48", 3, {
+  cost = 8, minRound = 5, shape = S.L, tags = { "arms", "fury" },
+  triggers = { { on = "anyCrit", condition = "resourceAtLeast:rage:60", match = { tag = "strike" }, effects = { { type = "cast", key = "execute" } }, healing = false } },
+  rankable = false, shopRequires = { "execute" }, shopWeight = 0.7,
+})
+
+ability(1253, "concussion_blow", "Concussion Blow", "prot", "ability_thunderbolt", 3, {
+  cost = 8, minRound = 6, shape = S.L, tags = { "prot", "melee" },
+  use = {
+    cost = 20, cd = 10, resource = "rage", requires = "melee",
+    effects = {
+      { type = "stun", duration = 1.5 },
+      { type = "buff", key = "concussion_blow", name = "Concussion Blow", match = { tag = "strike" }, stat = "none", value = 0, duration = 8, cond = "enemyBleeding", free = true },
+    },
+  },
+  rankable = false,
+})
+
+ability(1254, "sword_specialization", "Sword Specialization", "arms", "inv_sword_27", 4, {
+  shape = S.L, tags = { "arms", "fury" },
+  triggers = { { on = "anyHit", match = { weaponType = "sword" }, chance = 20, effects = { { type = "extraAttack", count = 2 } } } }, rankable = false,
+  shopWeight = 0.7,
+})
+
+ability(1255, "anger_management", "Anger Management", "arms", "spell_holy_blessingofstamina", 4, {
+  shape = S.v3, tags = { "arms", "fury", "heal" },
+  triggers = { { on = "resourceOverflow", resource = "rage", icd = 1, everyAmount = 20, effects = { { type = "heal", pctMax = 0.005 } } } },
+  rankable = false,
+})
+
+ability(1256, "retaliation", "Retaliation", "shared", "ability_warrior_challange", 4, {
+  minRound = 8, shape = S.sq, tags = { "arms", "prot", "melee" },
+  use = { cost = 30, cd = 20, resource = "rage", requires = "melee", effects = { { type = "buff", key = "retaliation", name = "Retaliation", stat = "none", value = 0, duration = 6 } } },
+  triggers = { { on = "damaged", condition = "buff:retaliation", matchAttacker = { tag = "melee" }, icd = 0.1, effects = { { type = "cast", key = "heroic_strike" } } } },
+  rankable = false, shopRequires = { "heroic_strike" },
+})
+
+ability(1257, "enrage", "Enrage", "fury", "spell_shadow_unholyfrenzy", 4, {
+  minRound = 8, shape = S.v3, tags = { "fury" },
+  use = { cd = 3, condition = "resourceAtLeast:rage:60", effects = { { type = "buff", key = "enrage", name = "Enrage", stat = "dmgPct", value = 50, duration = 4 } } },
+  rankable = false,
+})
+
+ability(1258, "sweeping_strikes", "Sweeping Strikes", "arms", "ability_rogue_slicedice", 5, {
+  cost = 15, minRound = 9, shape = S.sq, tags = { "arms", "fury" },
+  triggers = { { on = "resourceSpent", resource = "rage", everyAmount = 40, effects = { { type = "cast", target = "neighbors", match = { tag = "strike" } } } } },
+  rankable = false, shopWeight = 0.65,
+})
+
+ability(1259, "last_stand", "Last Stand", "prot", "spell_holy_ashestoashes", 5, {
+  cost = 14, shape = S.L, tags = { "prot", "fury", "heal" },
+  lethalSave = { duration = 5, effects = { { type = "resource", resource = "rage", amount = 100 }, { type = "extraAttack", count = 3 } }, health = 0.5 },
+  rankable = false,
+})
+
+ability(1260, "slam", "Slam", "arms", "ability_warrior_decisivestrike", 2, {
+  shape = S.v3, tags = { "arms", "melee", "strike" },
+  use = {
+    cost = 20, cd = 6, resource = "rage", requires = { "melee", "twohand" },
+    effects = { { type = "damage", coef = 0.3, min = 1, max = 3, school = "physical", weapon = true, weaponPct = 1.7 } },
+  },
+  shopWeight = 1.5,
+})
+
+ability(1261, "improved_slam", "Improved Slam", "fury", "ability_warrior_decisivestrike", 3, { shape = S.v2, tags = { "fury" }, adjacency = { { match = { key = "slam" }, mods = { costPct = -25, haste = 30 } } }, passiveTriggers = true, shopRequires = { "slam" } })
+
+ability(1262, "tactical_mastery", "Tactical Mastery", "arms", "spell_nature_enchantarmor", 4, {
+  shape = S.v2, tags = { "arms" },
+  triggers = {
+    {
+      on = "resourceOverflow", resource = "rage", icd = 1, everyAmount = 20,
+      effects = { { type = "buff", key = "tactical_mastery", name = "Tactical Mastery", match = { tag = "strike" }, stat = "none", duration = 8, free = true } },
+    },
+  },
+})
+
+ability(1263, "piercing_howl", "Piercing Howl", "fury", "spell_shadow_deathscream", 2, {
+  minRound = 3, tags = { "fury", "shout" },
+  use = { cost = 10, cd = 8, resource = "rage", effects = { { type = "debuff", key = "piercing_howl", name = "Piercing Howl", stat = "haste", value = 25, duration = 4 } } },
+  rankable = false,
+})
+
+ability(1264, "berserker_rage", "Berserker Rage", "fury", "spell_nature_ancestralguardian", 1, {
+  tags = { "fury" },
+  use = {
+    cd = 14, initialDelay = 2,
+    effects = { { type = "resource", resource = "rage", amount = 18 }, { type = "buff", key = "berserker_rage", name = "Berserker Rage", stat = "rageTakenPct", value = 50, duration = 5 } },
+  },
+  rankable = false,
+})
+
+ability(1265, "dual_wield_specialization", "Dual Wield Specialization", "fury", "ability_dualwield", 3, {
+  shape = S.v2, tags = { "fury" },
+  triggers = {
+    {
+      on = "battleStart", condition = "dualwield",
+      effects = {
+        {
+          type = "buff", key = "dual_wield_specialization", name = "Dual Wield Specialization", target = "all",
+          match = { kind = "weapon", anyTag = { "autoattack" }, tag = "melee" }, stat = "haste", value = 20, duration = 120,
+        },
+      },
+    },
+  },
+})
+
+ability(1266, "shield_wall", "Shield Wall", "prot", "ability_warrior_shieldwall", 4, {
+  shape = S.L, tags = { "prot", "defensive" },
+  use = {
+    cost = 15, cd = 20, reactive = true, resource = "rage", requires = "shield", condition = "below50",
+    effects = { { type = "buff", key = "shield_wall", name = "Shield Wall", stat = "dr", value = 40, duration = 5 } },
+  },
+  rankable = false,
+})
+
+H.Weapon{
+  id = 1290, key = "worn_axe", name = "Worn Axe", icon = I("inv_axe_11"), quality = 1, classes = WARRIOR, weaponType = "axe", weaponMin = 5,
+  weaponMax = 9, speed = 2.4, noShop = true, starter = true,
+}
+
+ability(1700, "charge", "Charge", "shared", "ability_warrior_charge", 2, {
+  shape = S.v2, tags = { "arms", "fury", "prot" },
+  triggers = { { on = "battleStart", effects = { { type = "resource", resource = "rage", amount = 25 }, { type = "cdr", target = "neighbors", match = { tag = "strike" }, amount = 2 } } } },
+  rankable = false,
+})
+
+ability(1701, "cleave", "Cleave", "arms", "ability_warrior_cleave", 2, {
+  shape = S.L, tags = { "arms", "fury", "melee", "strike" },
+  use = { cost = 20, cd = 7, resource = "rage", requires = "melee", effects = { { type = "damage", coef = 0.3, min = 2, max = 4, school = "physical", weapon = true, weaponPct = 1.25 } } },
+  adjacency = { { empty = true, selfMods = { dmgPct = 10 }, side = "left" }, { empty = true, selfMods = { dmgPct = 10 }, side = "right" } },
+  shopAffinities = { WARRIOR = { arms = 0.8, fury = 1 } }, shopWeight = 1.4,
+})
+
+ability(1702, "disarm", "Disarm", "shared", "ability_warrior_disarm", 3, {
+  tags = { "arms", "prot", "defensive" },
+  use = { cost = 15, cd = 16, resource = "rage", requires = "melee", effects = { { type = "debuff", key = "disarm", name = "Disarm", stat = "meleePct", value = 35, duration = 6 } } },
+  rankable = false,
+})
+
+ability(1703, "shield_bash", "Shield Bash", "prot", "ability_warrior_shieldbash", 2, {
+  tags = { "prot", "melee", "strike" },
+  use = {
+    cost = 10, cd = 10, resource = "rage", requires = "shield",
+    effects = { { type = "damage", coef = 0.25, min = 1, max = 3, school = "physical", blockScale = 2 }, { type = "purge", count = 1 } },
+  },
+  shopWeight = 1.5,
+})
+
+
+ability(1900, "hamstring", "Hamstring", "arms", "ability_shockwave", 1, {
+  tags = { "arms", "melee", "strike" },
+  use = {
+    cost = 8, cd = 8, resource = "rage", requires = "melee",
+    effects = {
+      { type = "damage", coef = 0.15, min = 1, max = 2, school = "physical" },
+      { type = "debuff", key = "hamstring", name = "Hamstring", stat = "haste", value = 15, duration = 8 },
+      { type = "buff", key = "hamstring_opening", name = "Hamstring", stat = "crit", value = 8, duration = 8, cond = "enemyBleeding" },
+    },
+  },
+})
+
+ability(1901, "mace_specialization", "Mace Specialization", "arms", "inv_mace_01", 3, { shape = S.v2, tags = { "arms" }, triggers = { { on = "anyHit", match = { weaponType = "mace" }, chance = 15, effects = { { type = "stun", duration = 1 } } } }, rankable = false })
+
+ability(1902, "axe_specialization", "Axe Specialization", "arms", "inv_axe_06", 3, {
+  minRound = 5, shape = S.v2, tags = { "arms" },
+  triggers = { { on = "anyCrit", match = { weaponType = "axe" }, effects = { { type = "tickDots", match = { tag = "bleed" } } }, healing = false } },
+  rankable = false,
+})
+
+
+
+ability(1903, "improved_overpower", "Improved Overpower", "arms", "inv_sword_05", 4, {
+  shape = S.L, tags = { "arms" },
+  triggers = { { on = "anyCrit", match = { key = "overpower" }, icd = 2, effects = { { type = "cast", key = "mortal_strike" } }, healing = false } },
+  rankable = false, shopRequires = { "overpower", "mortal_strike" },
+})
+
+ability(1904, "improved_rend", "Improved Rend", "arms", "ability_gouge", 2, {
+  minRound = 3, shape = S.v2, tags = { "arms" },
+  triggers = {
+    {
+      on = "dotTick", match = { tag = "bleed" }, everyAmount = 18,
+      effects = { { type = "resource", resource = "rage", amount = 3 }, { type = "cdr", target = "all", match = { key = "slam" }, amount = 1 } },
+    },
+  },
+  rankable = false, shopRequires = { "rend" },
+})
+
+ability(1905, "demoralizing_shout", "Demoralizing Shout", "fury", "ability_warrior_warcry", 1, {
+  tags = { "fury", "shout" },
+  use = {
+    cost = 10, cd = 12, resource = "rage",
+    effects = {
+      { type = "debuff", key = "demoralizing_shout", name = "Demoralizing Shout", stat = "ap", value = 16, duration = 10 },
+      { type = "debuff", key = "demoralizing_shout_damage", name = "Demoralizing Shout", stat = "dmgPct", value = 10, duration = 8 },
+    },
+  },
+})
+
+ability(1906, "cruelty", "Cruelty", "fury", "ability_rogue_eviscerate", 3, {
+  shape = S.v2, tags = { "fury", "heal" },
+  triggers = { { on = "anyCrit", condition = "enemyBleeding", match = { tag = "melee" }, effects = { { type = "heal", fromEvent = 0.15 } }, healing = false } },
+  rankable = false,
+})
+
+ability(1907, "pummel", "Pummel", "fury", "inv_gauntlets_04", 4, {
+  tags = { "fury", "melee", "strike" },
+  use = {
+    cost = 15, cd = 9, resource = "rage", requires = "melee",
+    effects = {
+      { type = "damage", coef = 0.2, min = 1, max = 3, school = "physical" }, { type = "drain", resource = "mana", amount = 15 },
+      { type = "debuff", key = "pummel", name = "Pummel", stat = "spellPct", value = 20, duration = 5 },
+    },
+  },
+})
+
+ability(1908, "improved_berserker_rage", "Improved Berserker Rage", "fury", "spell_nature_ancestralguardian", 5, {
+  cost = 15, shape = S.sq, tags = { "fury" },
+  triggers = { { on = "resourceGained", resource = "rage", condition = "buff:berserker_rage", everyAmount = 25, effects = { { type = "extraAttack", count = 1 } } } },
+  rankable = false, shopRequires = { "berserker_rage" },
+})
+
+ability(1909, "thunder_clap", "Thunder Clap", "prot", "spell_nature_thunderclap", 2, {
+  tags = { "prot", "melee", "spell" },
+  use = {
+    cost = 12, cd = 8, resource = "rage",
+    effects = {
+      { type = "damage", coef = 0.3, min = 1, max = 3, school = "physical", noDodge = true },
+      { type = "debuff", key = "thunder_clap", name = "Thunder Clap", stat = "haste", value = 20, duration = 6 },
+    },
+  },
+})
+
+ability(1910, "defensive_stance", "Defensive Stance", "prot", "ability_warrior_defensivestance", 1, {
+  shape = S.v2, tags = { "prot", "defensive" }, stats = { dmgPct = -10, dr = 10 }, exclusiveGroup = "warrior_stance", exclusiveLabel = "Stance",
+  adjacency = { { match = { tag = "defensive" }, corners = true, mods = { costPct = -20 } } },
+})
+
+ability(1911, "defiance", "Defiance", "prot", "ability_warrior_innerrage", 3, {
+  shape = S.v2, tags = { "prot" },
+  triggers = { { on = "block", effects = { { type = "buff", key = "defiance", name = "Defiance", stat = "ap", value = 0, duration = 6, fromEvent = 0.75, maxStacks = 5, stack = true } } } },
+  rankable = false,
+})
+
+ability(1912, "improved_shield_block", "Improved Shield Block", "prot", "ability_defend", 2, {
+  minRound = 3, shape = S.v2, tags = { "prot" },
+  triggers = {
+    {
+      on = "block", condition = "buff:shield_block",
+      effects = { { type = "resource", resource = "rage", amount = 4 }, { type = "cdr", target = "all", match = { key = "shield_slam" }, amount = 0.5 } },
+    },
+  },
+  rankable = false, shopRequires = { "shield_block" },
+})
+
+ability(1913, "improved_revenge", "Improved Revenge", "prot", "ability_warrior_revenge", 3, {
+  minRound = 5, shape = S.v2, tags = { "prot" },
+  triggers = { { on = "anyHit", match = { key = "revenge" }, chance = 25, effects = { { type = "stun", duration = 1 } } } }, rankable = false,
+  shopRequires = { "revenge" },
+})
+
+ability(1914, "improved_shield_wall", "Improved Shield Wall", "prot", "ability_warrior_shieldwall", 4, {
+  minRound = 8, shape = S.v2, tags = { "prot", "heal" },
+  triggers = { { on = "anyUse", match = { key = "shield_wall" }, effects = { { type = "heal", pctMax = 0.2 }, { type = "cleanse", count = 2, debuffs = true } } } },
+  rankable = false, shopRequires = { "shield_wall" },
+})
+
+ability(1915, "shield_specialization", "Shield Specialization", "prot", "inv_shield_06", 5, {
+  cost = 15, minRound = 11, shape = S.sq, tags = { "prot", "melee" },
+  triggers = { { on = "block", effects = { { type = "cast", key = "shield_block" }, { type = "damage", school = "physical", fromEvent = 0.75, noCrit = true, noDodge = true } } } },
+  rankable = false, shopWeight = 0.65,
+})
+
+ability(1916, "iron_will", "Iron Will", "prot", "spell_magic_magearmor", 4, {
+  shape = S.v2, tags = { "prot", "defensive" },
+  triggers = { { on = "stunned", effects = { { type = "buff", key = "iron_will", name = "Iron Will", stat = "dr", value = 50, duration = 3 }, { type = "resource", resource = "rage", amount = 15 } } } },
+  rankable = false,
+})
+
+ability(1917, "warrior_anticipation", "Anticipation", "prot", "spell_nature_mirrorimage", 2, {
+  shape = S.v2, tags = { "prot", "defensive" }, stats = { blockChance = 5, dodge = 3 },
+  triggers = { { on = "dodged", icd = 2, effects = { { type = "cdr", target = "all", match = { kind = "ability", damaging = "direct", tag = "strike" }, amount = 0.75, clampReady = true } } } },
+})
+
+
+ability(1923, "berserker_stance", "Berserker Stance", "fury", "ability_racial_avatar", 3, {
+  shape = S.v3, tags = { "fury", "stance" }, stats = { dr = -10 }, exclusiveGroup = "warrior_stance", exclusiveLabel = "Stance",
+  triggers = {
+    {
+      on = "battleStart",
+      effects = { { type = "buff", key = "berserker_stance", name = "Berserker Stance", stat = "crit", value = 3, duration = 120, gearCoef = 0.25, gearStat = "crit", rankScale = false } },
+    },
+  },
+  shopWeight = 0.6,
+})
+
+ability(1930, "battle_stance", "Battle Stance", "shared", "ability_warrior_offensivestance", 2, {
+  shape = S.L, tags = { "arms", "fury", "stance" }, exclusiveGroup = "warrior_stance", exclusiveLabel = "Stance",
+  triggers = {
+    {
+      on = "targetDodged", match = { kind = "weapon", anyTag = { "autoattack" }, tag = "melee" }, icd = 2,
+      effects = {
+        { type = "resource", resource = "rage", amount = 4, rankScale = false },
+        { type = "cdr", target = "all", match = { kind = "ability", anyTag = { "strike" }, damaging = "direct", tag = "melee" }, amount = 0.5 },
+      },
+    },
+  },
+  shopWeight = 0.8,
+})
+
+
+
+ability(1931, "intercept", "Intercept", "fury", "ability_rogue_sprint", 2, {
+  minRound = 3, shape = S.h2, tags = { "arms", "fury", "melee", "strike", "control" },
+  use = {
+    cost = 15, cd = 14, resource = "rage", requires = "melee",
+    effects = { { type = "damage", coef = 0.35, min = 1, max = 3, school = "physical", weapon = true, weaponPct = 1 }, { type = "stun", duration = 0.5, rankScale = false } },
+  },
+  adjacency = { { empty = true, selfMods = { dmgPct = 10 }, side = "front" } }, shopAffinities = { WARRIOR = { arms = 0.8, fury = 1, prot = 0.4 } },
+  shopWeight = 1.2,
+})
+
+ability(1932, "intimidating_shout", "Intimidating Shout", "shared", "ability_golemthunderclap", 3, {
+  cost = 7, shape = { "10", "10", "11" }, tags = { "arms", "fury", "prot", "shout", "defensive", "control" },
+  use = { cost = 20, cd = 18, reactive = true, resource = "rage", condition = "below50", effects = { { type = "stun", duration = 1, controlType = "fear", rankScale = false } } },
+  shopWeight = 0.8,
+})
+
+ability(1933, "one_handed_weapon_specialization", "One-Handed Weapon Specialization", "prot", "inv_sword_20", 2, {
+  minRound = 3, shape = S.L, tags = { "prot", "fury" },
+  adjacency = { { match = { kind = "weapon", hands = 1, tag = "melee" }, corners = true, mods = { dmgPct = 12.5 } } }, rankable = false,
+  shopAffinities = { WARRIOR = { arms = 0.3, fury = 0.8, prot = 1 } }, shopWeight = 0.9,
+})
+
+ability(1934, "two_handed_weapon_specialization", "Two-Handed Weapon Specialization", "arms", "inv_axe_09", 2, {
+  minRound = 3, shape = { "111" }, tags = { "arms", "fury" },
+  adjacency = { { match = { kind = "weapon", hands = 2, tag = "melee" }, mods = { dmgPct = 25 }, side = "back" } }, rankable = false,
+  shopAffinities = { WARRIOR = { arms = 1, fury = 0.8 } }, shopWeight = 0.9,
+})
+
+ability(1935, "deflection", "Deflection", "arms", "ability_parry", 2, {
+  tags = { "arms", "prot", "defensive" },
+  triggers = { { on = "dodged", icd = 2, effects = { { type = "cdr", target = "all", match = { kind = "weapon", tag = "melee" }, amount = 0.25, clampReady = true } } } },
+  adjacency = { { stats = { dodge = 5 }, once = true, match = { kind = "weapon", tag = "melee" }, side = "front" } },
+  shopAffinities = { WARRIOR = { arms = 0.8, fury = 0.4, prot = 1 } },
+})
+
+ability(1936, "booming_voice", "Booming Voice", "fury", "spell_nature_purge", 2, {
+  cost = 5, shape = S.T, tags = { "fury", "support" },
+  adjacency = { { match = { notTag = "control", tag = "shout" }, mods = { haste = 12.5 }, side = "front" } }, rankable = false,
+  shopAffinities = { WARRIOR = { arms = 0.6, fury = 1, prot = 0.6 } }, shopWeight = 0.8,
+})
+
+
+
+ability(1937, "improved_cleave", "Improved Cleave", "fury", "ability_warrior_cleave", 2, {
+  minRound = 3, shape = S.L, tags = { "fury", "arms", "melee" },
+  triggers = {
+    {
+      on = "anyHit", match = { key = "cleave" },
+      effects = { { type = "damage", school = "physical", noCrit = true, noDodge = true, noOwnTriggers = true, weapon = true, weaponPct = 0.75 } },
+      healing = false,
+    },
+  },
+  shopRequires = { "cleave" }, shopWeight = 0.9,
+})
+
+ability(1938, "improved_bloodrage", "Improved Bloodrage", "prot", "ability_racial_bloodrage", 2, {
+  cost = 4, tags = { "prot", "arms", "fury" },
+  triggers = { { on = "anyUse", match = { key = "bloodrage" }, effects = { { type = "resource", resource = "rage", amount = 4 } } } },
+  shopAffinities = { WARRIOR = { arms = 0.8, fury = 1, prot = 0.6 } }, shopRequires = { "bloodrage" }, shopWeight = 0.9,
+})
+
+
+ability(1939, "toughness", "Toughness", "prot", "spell_holy_devotion", 2, {
+  cost = 5, minRound = 3, shape = S.T, tags = { "prot", "defensive" },
+  triggers = {
+    {
+      on = "battleStart",
+      effects = { { type = "buff", key = "toughness", name = "Toughness", stat = "armor", value = 0, duration = 120, gearCoef = 0.125, gearStat = "armor", rankScale = false } },
+    },
+  },
+  shopAffinities = { WARRIOR = { arms = 0.6, fury = 0.3, prot = 1 } },
+})
+
+ability(1940, "improved_shield_bash", "Improved Shield Bash", "prot", "ability_warrior_shieldbash", 3, {
+  cost = 7, shape = { "110", "011" }, tags = { "prot", "defensive", "support" },
+  triggers = {
+    {
+      on = "anyHit", match = { key = "shield_bash" }, icd = 8,
+      effects = { { type = "debuff", key = "improved_shield_bash", name = "Improved Shield Bash", stat = "spellPct", value = 25, duration = 3, rankScale = false } },
+      healing = false,
+    },
+  },
+  shopRequires = { "shield_bash" }, shopWeight = 0.9,
+})

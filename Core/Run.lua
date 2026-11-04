@@ -223,6 +223,7 @@ function Run:TrainingInfo(target)
   local base = ns.Ranks.Base(def)
   if not base.rankable then return nil, "This item has no trainable ranks." end
   local learned = math.max(self.learnedRanks[base.key] or 1, def.rank or 1)
+  if ns.Ranks.TrainableMaxRank(base) <= 1 and learned <= 1 then return nil, "This item has no trainable ranks." end
   local nextRank = ns.Ranks.NextRank(base, learned)
   local nextDef = nextRank and ns.Ranks.Definition(base, nextRank)
   local price = nextRank and ns.Ranks.TrainingCost(base, nextRank)
@@ -738,6 +739,7 @@ function Run.Restore(data)
     for key, value in pairs(data.trainingResale) do
       local base, rank = ns.ItemsByKey[key], run.learnedRanks[key]
       if not base or not rank or rank < 2 or type(value) ~= "number" or value ~= math.floor(value) or value < 0
+        or value > 0 and (owned[base.id] or 0) == 0
         or value > math.max(ns.Ranks.Investment(base, rank) - base.cost, ns.Ranks.LegacyTrainingCost(base, rank)) then return nil end
       run.trainingResale[key] = value
     end

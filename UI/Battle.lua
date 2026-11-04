@@ -2,14 +2,10 @@ local ADDON, ns = ...
 local T = ns.UI.Theme
 local L = ns.L
 local Util = ns.Util
+local Playback = ns.UI.BattlePlayback
 
 local Battle = {}
 ns.UI.Battle = Battle
-Battle.PROC_DELAY = 0.06
-Battle.MAX_PROC_LAG = 0.18
-Battle.BURST_DELAY = 0.1
-Battle.MAX_BURST_HOLD = 0.8
-Battle.MIN_BURST_HITS = 3
 Battle.VISUALS_PER_FRAME = 24
 Battle.MAX_VISUAL_BACKLOG = 96
 Battle.FOUND_TIME = 2.2
@@ -25,7 +21,6 @@ Battle.RESULT_SOUND_GAP = 0.15
 local screen
 local state
 local showInspector
-local updateInspector
 
 local CONTENT_W = 980
 local TOP_H = 36
@@ -37,146 +32,11 @@ local AURA_SIZE = 28
 local MAX_AURAS = 12
 local LOG_H = 84
 local BAG_GAP = 16
-local RES_ORDER = { "mana", "rage", "energy", "focus", "combo" }
+local RES_ORDER = T.RESOURCE_ORDER
 
-local function activationKey(event)
-  if event.nodeId then
-    return (event.side or "") .. ":" .. tostring(event.rootId or 0) .. ":" .. tostring(event.nodeId)
-  end
-end
+local activationKey = Playback.ActivationKey
 
-local function isActivation(event)
-  return event.type == "fire" or event.type == "proc" and event.on ~= "use" and event.on ~= "battleStart"
-    or event.type == "damage" and event.extraAttack == true
-end
-
-function Battle.BuildPlayback(result, delay)
-  delay = delay == nil and Battle.PROC_DELAY or math.max(0, delay)
-  local playback = { steps = {}, visuals = {}, activations = {}, holds = {}, time = result.time, duration = result.time, initial = Util.DeepCopy(result.initial or result.timeline[1]) }
-  local nextEvent = 1
-  local function eventStep(event, index)
-    local activation = activationKey(event)
-    if activation and isActivation(event) then
-      local previous = playback.activations[activation]
-      if not previous or event.type == "fire" then playback.activations[activation] = event end
-    end
-    playback.steps[#playback.steps + 1] = { at = event.t, t = event.t, event = event, index = index }
-  end
-  for _, snapshot in ipairs(result.timeline) do
-    while nextEvent <= #result.events and result.events[nextEvent].t <= snapshot.t + 1e-7 do
-      eventStep(result.events[nextEvent], nextEvent)
-      nextEvent = nextEvent + 1
-    end
-    playback.steps[#playback.steps + 1] = { at = snapshot.t, t = snapshot.t, snapshot = snapshot }
-  end
-  while nextEvent <= #result.events do
-    eventStep(result.events[nextEvent], nextEvent)
-    nextEvent = nextEvent + 1
-  end
-  local offset, first = 0, 1
-  while first <= #playback.steps do
-    local last, tick = first, playback.steps[first].t
-    while last < #playback.steps and math.abs(playback.steps[last + 1].t - tick) < 1e-7 do last = last + 1 end
-    local groups = {}
-    for index = first, last do
-      local event = playback.steps[index].event
-      if event and event.rootId then
-        local group = groups[event.rootId]
-        if not group then group = { hits = 0, nodes = {} } groups[event.rootId] = group end
-        if event.type == "damage" then
-          group.hits = group.hits + 1
-          group.nodes[activationKey(event) or "event:" .. tostring(index)] = true
-        end
-      end
-    end
-    local beat, previous, hit = 0, nil, false
-    for index = first, last do
-      local step = playback.steps[index]
-      local event = step.event
-      local group = event and groups[event.rootId]
-      local node = event and (activationKey(event) or "event:" .. tostring(index))
-      if group and group.hits >= Battle.MIN_BURST_HITS and group.nodes[node] then
-        if previous and (previous ~= node or event.type == "damage" and hit) then beat, hit = beat + 1, false end
-        previous = node
-        if event.type == "damage" then hit = true end
-      end
-      step.beat = beat
-    end
-    local width = delay > 0 and math.min(beat * Battle.BURST_DELAY, Battle.MAX_BURST_HOLD) or 0
-    for index = first, last do
-      local step = playback.steps[index]
-      if step.snapshot then step.beat = beat end
-      step.at = step.t + offset + (beat > 0 and width * step.beat / beat or 0)
-      step.paced = width > 0
-    end
-    if width > 0 then
-      playback.holds[#playback.holds + 1] = { t = tick, at = tick + offset, finish = tick + offset + width, offset = offset + width }
-      offset = offset + width
-    end
-    first = last + 1
-  end
-  playback.duration = result.time + offset
-  local starts, roots = {}, {}
-  local function nodeKey(event, id) return tostring(event.rootId or 0) .. ":" .. tostring(id) end
-  for _, step in ipairs(playback.steps) do
-    local event = step.event
-    if event then
-      local root = event.rootId and tostring(event.rootId) or "event:" .. tostring(step.index)
-      local at = math.max(step.at, roots[root] or 0)
-      local key = event.nodeId and nodeKey(event, event.nodeId)
-      if key and not starts[key] then
-        local parent = event.parentNodeId and starts[nodeKey(event, event.parentNodeId)]
-        if parent and not step.paced then at = math.max(at, parent + delay) end
-        at = math.min(at, step.at + (step.paced and 0 or Battle.MAX_PROC_LAG))
-        starts[key] = at
-      end
-      roots[root] = at
-      playback.visuals[#playback.visuals + 1] = { at = at, event = event, index = step.index, root = root, paced = step.paced, beat = step.paced and step.at or nil }
-    end
-  end
-  table.sort(playback.visuals, function(a, b)
-    if a.at ~= b.at then return a.at < b.at end
-    return a.index < b.index
-  end)
-  return playback
-end
-
-function Battle.PlaybackCombatTime(playback, at)
-  local low, high, found = 1, #(playback.holds or {}), nil
-  while low <= high do
-    local middle = math.floor((low + high) / 2)
-    if playback.holds[middle].at <= at then found, low = playback.holds[middle], middle + 1 else high = middle - 1 end
-  end
-  if found then at = at < found.finish and found.t or at - found.offset end
-  return math.max(0, math.min(playback.time, at))
-end
-
-function Battle.ApplyPlaybackEvent(snapshot, event, result)
-  local target = event.target or event.side
-  local hp, absorb, res = target and "hp" .. target, target and "abs" .. target, target and "res" .. target
-  local amount = event.amount or 0
-  if event.type == "damage" or event.type == "dot" or event.type == "thorns" or event.type == "healthCost" then
-    if hp then snapshot[hp] = (snapshot[hp] or 0) - amount end
-    if absorb then snapshot[absorb] = math.max(0, (snapshot[absorb] or 0) - (event.absorbed or 0)) end
-  elseif event.type == "heal" or event.type == "hot" then
-    if hp then
-      if event.revive then snapshot[hp], snapshot[absorb] = result[target].hpMax, 0
-      else snapshot[hp] = math.min(result[target].hpMax, (snapshot[hp] or 0) + amount) end
-    end
-  elseif event.type == "absorb" and absorb then
-    snapshot[absorb] = math.max(0, (snapshot[absorb] or 0) + amount)
-  elseif event.type == "resource" and res then
-    snapshot[res] = snapshot[res] or {}
-    local maximum = result[target].resources[event.resource] or math.huge
-    snapshot[res][event.resource] = Util.Clamp((snapshot[res][event.resource] or 0) + amount, 0, maximum)
-  elseif event.type == "fatigue" then
-    snapshot.hpA, snapshot.hpB = snapshot.hpA - amount, snapshot.hpB - amount
-  end
-end
-
-local function itemDefinition(key)
-  return ns.ItemsByKey[key] or ns.Sim.SourceDefinition(key)
-end
+local itemDefinition = ns.Sim.SourceDefinition
 
 function Battle.StopSounds(keepCombat)
   if not state then return end
@@ -292,37 +152,6 @@ local function updateCombatSound()
   end
 end
 
-function Battle.ItemContributions(result, sideId, throughEvent)
-  local metrics = {}
-  local summary = sideId == "A" and result.A or result.B
-  for uid, info in pairs(summary.items) do
-    if throughEvent == nil then
-      metrics[uid] = { dmg = info.dmg, heal = info.heal, uses = info.fired, procs = info.procs or 0,
-        shield = info.shield or 0, extraHits = info.extraHits or 0, resources = Util.ShallowCopy(info.resources or {}) }
-    else
-      metrics[uid] = { dmg = 0, heal = 0, uses = 0, procs = 0, shield = 0, extraHits = 0, resources = {} }
-    end
-  end
-  if throughEvent == nil then return metrics end
-  for index = 1, math.min(throughEvent, #result.events) do
-    local event = result.events[index]
-    local item = event.side == sideId and metrics[event.uid]
-    if item then
-      if event.type == "damage" or event.type == "dot" then
-        item.dmg = item.dmg + event.amount
-        if event.extraAttack then item.extraHits = item.extraHits + 1 end
-      elseif event.type == "heal" or event.type == "hot" then item.heal = item.heal + event.amount
-      elseif event.type == "fire" then item.uses = item.uses + 1
-      elseif event.type == "proc" and event.on ~= "use" and event.on ~= "battleStart" then item.procs = item.procs + 1
-      elseif event.type == "absorb" then item.shield = item.shield + event.amount
-      elseif event.type == "resource" and event.amount > 0 then
-        item.resources[event.resource] = (item.resources[event.resource] or 0) + event.amount
-      end
-    end
-  end
-  return metrics
-end
-
 local function contributionLines(metrics)
   local parts, support = {}, {}
   for _, entry in ipairs({ { "dmg", "damage" }, { "heal", "healing" }, { "uses", "uses", "use" }, { "procs", "procs", "proc" } }) do
@@ -348,7 +177,7 @@ local function itemExtra(sideId, uid, def)
   end
   local throughEvent = state.nextEvent - 1
   if state.finished then throughEvent = nil end
-  local metrics = Battle.ItemContributions(state.result, sideId, throughEvent)[uid]
+  local metrics = Playback.ItemContributions(state.result, sideId, throughEvent)[uid]
   if metrics then
     local parts, support = contributionLines(metrics)
     if #parts > 0 then extra[#extra + 1] = { text = table.concat(parts, ", "), r = 1, g = 0.82, b = 0 } end
@@ -381,7 +210,7 @@ local function renderBreakdown()
   local view = screen.breakdown
   local sideId = view.sideId or "A"
   local summary = sideId == "A" and state.result.A or state.result.B
-  local metrics = Battle.ItemContributions(state.result, sideId)
+  local metrics = Playback.ItemContributions(state.result, sideId)
   local items = {}
   for uid, info in pairs(summary.items) do
     local def = itemDefinition(info.key)
@@ -543,290 +372,15 @@ local function createBreakdown(parent)
   return view
 end
 
-local INSPECT_STATS = {
-  { "hp", "Health" }, { "armor", "Armor" }, { "ap", "Attack Power" }, { "sp", "Spell Power" },
-  { "healing", "Healing Power" }, { "crit", "Critical Strike", true }, { "haste", "Haste", true },
-  { "dodge", "Dodge", true }, { "block", "Block Value" }, { "blockChance", "Block Chance", true },
-  { "dr", "Damage Reduction", true }, { "critDamage", "Critical Strike Damage", true, true },
-  { "thorns", "Thorns Damage", false, true }, { "lifesteal", "Life Steal", true, true },
-  { "dmgPct", "Damage Dealt", true, true }, { "healPct", "Healing Done", true, true },
-  { "petPct", "Pet Damage", true, true }, { "rangedPct", "Ranged Damage", true, true },
-  { "meleePct", "Melee Damage", true, true }, { "spellPct", "Spell Damage", true, true },
-  { "ragePct", "Rage from Hits", true, true }, { "rageTakenPct", "Rage from Damage Taken", true, true },
-  { "rageOnCrit", "Rage on Critical Strike", false, true },
-}
-
-local function inspectContext(sideId)
-  local summary = state.result[sideId]
-  local class = ns.GetClass(summary.classKey)
-  local context = {
-    classKey = summary.classKey, classDef = class, round = state.round, hpMax = summary.hpMax,
-    stats = Util.DeepCopy(summary.stats), res = {}, items = {},
-    talents = Util.DeepCopy(summary.talents or state.allocations[sideId]),
-  }
-  for resource, maximum in pairs(summary.resources or {}) do
-    local cfg = class.resources and class.resources[resource]
-    context.res[resource] = { max = maximum, regen = cfg and cfg.regen or 0 }
-  end
-  for _, item in pairs(summary.items or {}) do
-    local def = itemDefinition(item.key)
-    if def and item.enabled then
-      for resource, cfg in pairs(def.grants or {}) do
-        local pool = context.res[resource]
-        if pool then pool.regen = math.max(pool.regen, cfg.regen or 0) end
-      end
-    end
-  end
-  if context.res.mana then context.res.mana.regen = context.res.mana.regen + (context.stats.regen or 0) end
-  return context
-end
-
-local function inspectNumber(value)
-  return string.format("%.1f", value):gsub("%.0$", "")
-end
-
-local function inspectStatTooltip(owner, context)
-  if not owner.statKey:match("^resource:") then ns.UI.Tooltip.ShowStat(owner, owner.statKey, context) return end
-  ns.UI.Tooltip.Hide()
-  GameTooltip:SetOwner(owner, "ANCHOR_TOP")
-  GameTooltip:ClearLines()
-  GameTooltip:AddDoubleLine(owner.label:GetText(), owner.value:GetText(), 1, 0.82, 0, 1, 1, 1)
-  for _, line in ipairs(ns.Describe.StatLines(owner.statKey, context, false)) do
-    GameTooltip:AddLine(line.text, 0.8, 0.8, 0.8, true)
-  end
-  GameTooltip:Show()
-end
-
-updateInspector = function()
-  local view = screen and screen.inspector
-  if not view or not view:IsShown() or not state then return end
-  local sideId, snapshot = view.sideId, state.display
-  local context = view.context
-  local hp = math.max(0, snapshot["hp" .. sideId] or 0)
-  local absorb = snapshot["abs" .. sideId] or 0
-  view.health:SetText(string.format("%s: %d / %d%s", L["Health"], Util.Round(hp), context.hpMax,
-    absorb > 0 and string.format("   %s: %d", L["Absorb"], Util.Round(absorb)) or ""))
-  local index = 0
-  for _, resource in ipairs(RES_ORDER) do
-    local pool = context.res[resource]
-    if pool then
-      index = index + 1
-      local row = view.resources[index]
-      local current = (snapshot["res" .. sideId] or {})[resource] or 0
-      pool.cur = current
-      row.statKey = "resource:" .. resource
-      row.label:SetText(ns.RESOURCE_NAMES[resource] or resource)
-      row.value:SetText(string.format("%d / %d", Util.Round(current), pool.max))
-      row:Show()
-    end
-  end
-  for i = index + 1, #view.resources do view.resources[i]:Hide() end
-end
-
-local function renderInspector()
-  local view = screen.inspector
-  local context = inspectContext(view.sideId)
-  view.context = context
-  view.title:SetText(sideName(view.sideId) .. ": " .. L["Stats & Talents"])
-  view.mine:SetHighlighted(view.sideId == "A")
-  view.theirs:SetHighlighted(view.sideId == "B")
-  local rows = {}
-  for _, entry in ipairs(INSPECT_STATS) do
-    local key, value = entry[1], context.stats[entry[1]] or 0
-    if key == "hp" then value = context.hpMax end
-    if key == "crit" then value = ns.Sim.CritChance(value) end
-    if key == "dodge" then value = ns.Sim.DodgeChance(value) end
-    if key == "blockChance" then value = Util.Clamp(value, 0, 100) end
-    if key == "dr" then value = math.min(90, value) end
-    if not entry[4] or value ~= 0 then
-      rows[#rows + 1] = { key = key, label = L[entry[2]], value = inspectNumber(value) .. (entry[3] and "%" or "") }
-    end
-  end
-  if context.res.mana then
-    rows[#rows + 1] = { key = "resource:mana", label = L["Mana Regeneration"], value = inspectNumber(context.res.mana.regen) .. "/s" }
-  end
-  view.statEntries = rows
-  view:LayoutStats()
-  local total = 0
-  for index, spec in ipairs(context.classDef.specs or {}) do
-    local row = view.talents[index]
-    local points = context.talents[spec.tag] or 0
-    total = total + points
-    row.spec, row.points = spec.tag, points
-    T.SetItemIcon(row.icon, ns.Mastery.Definition(context.classKey, spec.tag).icon)
-    row.name:SetText(L[spec.name])
-    row.value:SetText(string.format(points == 1 and L["%d point"] or L["%d points"], points))
-    row.bonus:SetText(string.format(L["%d%% damage and healing"], points * ns.Mastery.SPEC_BONUS_PCT))
-    local milestones = {}
-    for _, threshold in ipairs(ns.Mastery.THRESHOLDS) do
-      milestones[#milestones + 1] = (points >= threshold and "|cff45e568" or "|cff888888") .. threshold .. "|r"
-    end
-    row.milestones:SetText(L["Milestones"] .. ": " .. table.concat(milestones, "   "))
-    row:Show()
-  end
-  for index = #(context.classDef.specs or {}) + 1, #view.talents do view.talents[index]:Hide() end
-  view.talentHeading:SetText(string.format(total == 1 and L["Talents (%d point)"] or L["Talents (%d points)"], total))
-end
-
 showInspector = function(sideId)
   if not state or not screen or (sideId ~= "A" and sideId ~= "B") then return end
   T.PlaySound(T.SOUND_CLICK)
   ns.UI.Tooltip.Hide()
   screen.breakdown:Hide()
-  screen.inspector.sideId = sideId
-  renderInspector()
-  screen.inspector:Show()
-  updateInspector()
-end
-
-local function createInspector(parent)
-  local view = T.Panel(parent, "card")
-  view:SetSize(740, 450)
-  view:SetPoint("CENTER", screen, "CENTER", 0, 0)
-  view:SetFrameLevel(parent:GetFrameLevel() + 12)
-  view:SetClampedToScreen(true)
-  view:EnableMouse(true)
-  T.CreateShadow(view, 30, 0.8)
-  view.title = T.Title(view, 17, T.C.text)
-  view.title:SetPoint("TOPLEFT", 18, -18)
-  view.close = T.CreateButton(view, L["Close"], 70, 24, "default", 12)
-  view.close:SetPoint("TOPRIGHT", -14, -14)
-  view.close:SetScript("OnClick", function() T.PlaySound(T.SOUND_CLICK) view:Hide() end)
-  view.mine = T.CreateButton(view, L["You"], 90, 24, "default", 12)
-  view.mine:SetPoint("TOPLEFT", 18, -48)
-  view.theirs = T.CreateButton(view, L["Opponent"], 90, 24, "default", 12)
-  view.theirs:SetPoint("LEFT", view.mine, "RIGHT", 6, 0)
-  view.mine:SetScript("OnClick", function() showInspector("A") end)
-  view.theirs:SetScript("OnClick", function() showInspector("B") end)
-  view.health = T.Text(view, 13, T.C.good)
-  view.health:SetPoint("TOPLEFT", 18, -82)
-  view.resources = {}
-  for index = 1, #RES_ORDER do
-    local row = CreateFrame("Frame", nil, view)
-    row:SetSize(132, 30)
-    row:SetPoint("TOPLEFT", 18 + (index - 1) * 140, -103)
-    row:EnableMouse(true)
-    row.label = T.Text(row, 10, T.C.muted)
-    row.label:SetPoint("TOPLEFT", 0, 0)
-    row.value = T.Number(row, 12, T.C.text)
-    row.value:SetPoint("TOPLEFT", 0, -13)
-    row:SetScript("OnEnter", function(self) inspectStatTooltip(self, view.context) end)
-    row:SetScript("OnLeave", function() ns.UI.Tooltip.Hide() end)
-    view.resources[index] = row
-  end
-  local statsHeading = T.Title(view, 13, T.C.gold, L["Starting stats"])
-  statsHeading:SetPoint("TOPLEFT", 18, -145)
-  view.talentHeading = T.Title(view, 13, T.C.gold)
-  view.talentHeading:SetPoint("TOPLEFT", 388, -145)
-  view.statsFrame = CreateFrame("Frame", nil, view)
-  view.statsFrame:SetSize(330, 244)
-  view.statsFrame:SetPoint("TOPLEFT", 18, -164)
-  view.previous = T.CreateButton(view, L["Previous"], 76, 22, "default", 11)
-  view.previous:SetPoint("BOTTOMLEFT", 18, 12)
-  view.next = T.CreateButton(view, L["Next"], 76, 22, "default", 11)
-  view.next:SetPoint("BOTTOMLEFT", 272, 12)
-  view.pageText = T.Text(view, 11, T.C.muted)
-  view.pageText:SetPoint("BOTTOMLEFT", 112, 17)
-  view.pageText:SetWidth(142)
-  view.pageText:SetJustifyH("CENTER")
-  function view:SetStatPage(page)
-    ns.UI.Tooltip.Hide()
-    self.page = Util.Clamp(math.floor(page or 1), 1, self.pageCount or 1)
-    local offset = (self.page - 1) * self.rowsPerPage
-    for index = 1, self.rowsPerPage do
-      local data, row = self.statEntries[offset + index], self.rows[index]
-      if data then
-        if not row then
-          row = CreateFrame("Frame", nil, self.statsFrame)
-          row:SetSize(310, 22)
-          row:SetPoint("TOPLEFT", 0, -(index - 1) * 22)
-          row:EnableMouse(true)
-          row.label = T.Text(row, 11, T.C.muted)
-          row.label:SetPoint("LEFT", 0, 0)
-          row.label:SetWidth(236)
-          row.label:SetJustifyH("LEFT")
-          row.value = T.Number(row, 12, T.C.text)
-          row.value:SetPoint("RIGHT", -2, 0)
-          row:SetScript("OnEnter", function(self) inspectStatTooltip(self, view.context) end)
-          row:SetScript("OnLeave", function() ns.UI.Tooltip.Hide() end)
-          self.rows[index] = row
-        end
-        row.statKey = data.key
-        row.label:SetText(data.label)
-        row.value:SetText(data.value)
-        row:Show()
-      elseif row then row:Hide() end
-    end
-    for index = self.rowsPerPage + 1, #self.rows do self.rows[index]:Hide() end
-    self.previous:SetEnabled(self.page > 1)
-    self.next:SetEnabled(self.page < self.pageCount)
-    self.pageText:SetText(string.format(L["Page %d of %d"], self.page, self.pageCount))
-    local paged = self.pageCount > 1
-    self.previous:SetShown(paged)
-    self.next:SetShown(paged)
-    self.pageText:SetShown(paged)
-  end
-  function view:LayoutStats()
-    self:SetScale(1)
-    local inheritedScale = self:GetEffectiveScale()
-    local screenHeight = UIParent:GetHeight() * UIParent:GetEffectiveScale()
-    local screenWidth = UIParent:GetWidth() * UIParent:GetEffectiveScale()
-    local fit = math.min(1, math.max(0.1, (screenHeight / inheritedScale - 48) / 450), math.max(0.1, (screenWidth / inheritedScale - 48) / 740))
-    if fit < 1 then self:SetScale(fit) end
-    local height = screenHeight / self:GetEffectiveScale()
-    local available = math.max(450, math.floor(height - 48))
-    local wanted = math.max(450, 164 + #self.statEntries * 22 + 24)
-    self:SetHeight(math.min(wanted, available))
-    local paged = wanted > available
-    self.rowsPerPage = math.max(1, math.floor((self:GetHeight() - 164 - (paged and 48 or 24)) / 22))
-    self.pageCount = math.max(1, math.ceil(#self.statEntries / self.rowsPerPage))
-    self.statsFrame:SetHeight(self.rowsPerPage * 22)
-    self:SetStatPage(1)
-  end
-  view.previous:SetScript("OnClick", function() T.PlaySound(T.SOUND_CLICK) view:SetStatPage(view.page - 1) end)
-  view.next:SetScript("OnClick", function() T.PlaySound(T.SOUND_CLICK) view:SetStatPage(view.page + 1) end)
-  view.statsFrame:EnableMouseWheel(true)
-  view.statsFrame:SetScript("OnMouseWheel", function(_, delta)
-    if delta ~= 0 then view:SetStatPage(view.page - delta) end
-  end)
-  view.rows, view.talents = {}, {}
-  for index = 1, 3 do
-    local row = CreateFrame("Frame", nil, view)
-    row:SetSize(334, 76)
-    row:SetPoint("TOPLEFT", 388, -164 - (index - 1) * 82)
-    row:EnableMouse(true)
-    row.icon = row:CreateTexture(nil, "ARTWORK")
-    row.icon:SetSize(32, 32)
-    row.icon:SetPoint("TOPLEFT", 0, -3)
-    row.name = T.Text(row, 12, T.C.text)
-    row.name:SetPoint("TOPLEFT", 42, -4)
-    row.name:SetWidth(178)
-    row.name:SetJustifyH("LEFT")
-    row.value = T.Number(row, 12, T.C.gold)
-    row.value:SetPoint("TOPRIGHT", 0, -4)
-    row.bonus = T.Text(row, 11, T.C.muted)
-    row.bonus:SetPoint("TOPLEFT", 42, -26)
-    row.milestones = T.Text(row, 11, T.C.muted)
-    row.milestones:SetPoint("TOPLEFT", 42, -48)
-    row:SetScript("OnEnter", function(self)
-      local context = view.context
-      GameTooltip:SetOwner(self, "ANCHOR_TOP")
-      GameTooltip:ClearLines()
-      GameTooltip:AddDoubleLine(self.name:GetText(), self.value:GetText(), 1, 0.82, 0, 1, 1, 1)
-      for _, line in ipairs(ns.Mastery.Lines(context.classKey, self.spec, self.points)) do
-        local prefix = line.points > 0 and string.format(L["%d points: "], line.points) or ""
-        local color = line.active and T.C.good or T.C.muted
-        local r, g, b = T.RGB(color)
-        GameTooltip:AddLine(prefix .. line.text, r, g, b, true)
-      end
-      GameTooltip:Show()
-    end)
-    row:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    view.talents[index] = row
-  end
-  view:SetScript("OnHide", function() ns.UI.Tooltip.Hide() end)
-  view:Hide()
-  return view
+  screen.inspector:Open(sideId, {
+    result = state.result, round = state.round, allocations = state.allocations,
+    names = { A = state.myName, B = state.theirName },
+  }, state.display)
 end
 
 local function createAuraRow(parent, right)
@@ -1019,8 +573,10 @@ local function logLine(e)
     local cause = e.masteryName and (e.masteryName .. " " .. L["talents"]) or source and source.name
     return stamp .. string.format("%s%s|r: %s %s%s", color, who, itemName(e.side, e.uid), L["(free)"], cause and (" " .. L["from"] .. " " .. cause) or "")
   elseif e.type == "channel" then
-    if e.phase == "start" then return stamp .. string.format("%s%s|r: %s %s", color, who, L["Channeling"], itemName(e.side, e.uid)) end
+    if e.phase == "start" then return stamp .. string.format("%s%s|r: %s %s", color, who, e.preparation and L["Preparing"] or L["Channeling"], itemName(e.side, e.uid)) end
     if e.phase == "interrupt" then return stamp .. string.format("%s%s|r: %s %s", color, who, itemName(e.side, e.uid), L["interrupted"]) end
+  elseif e.type == "delayed" then
+    if e.phase == "start" then return stamp .. string.format("%s%s|r: %s %s. %.1fs", color, who, L["Planted"], itemName(e.side, e.uid), e.duration) end
   elseif e.type == "damage" then
     local r, g, b = T.SchoolColor(e.school)
     local crit = e.crit and (" |cffffe066" .. L["(crit)"] .. "|r") or ""
@@ -1047,6 +603,8 @@ local function logLine(e)
     return stamp .. string.format("%s%s|r: %s %s", color, who, itemName(e.side, e.uid), L["was dodged"])
   elseif e.type == "block" then
     return stamp .. string.format("%s%s|r %s %d", color, who, L["blocks"], e.amount)
+  elseif e.type == "ground" then
+    return stamp .. string.format("%s%s|r: %s %s %d", color, who, itemName(e.side, e.uid), L["intercepts"], e.amount)
   elseif e.type == "status" then
     if e.refresh then return nil end
     return stamp .. string.format("%s%s|r: %s %s %s", color, who, itemName(e.side, e.uid), e.kind == "dot" and L["afflicts"] or L["soothes"], victim)
@@ -1155,13 +713,18 @@ local function stopPausedAnimations()
 end
 
 local function applyEvent(e)
-  Battle.ApplyPlaybackEvent(state.display, e, state.result)
+  Playback.ApplyEvent(state.display, e, state.result)
   if e.type == "channel" then
     if e.phase == "start" then
       state.channels[e.side] = { name = itemName(e.side, e.uid), duration = e.duration, endsAt = e.endsAt or e.t + e.duration }
     else
       state.channels[e.side] = nil
     end
+  end
+  if e.type == "delayed" then
+    if e.phase == "start" then
+      state.delays[e.side][e.uid] = { name = itemName(e.side, e.uid), duration = e.duration, endsAt = e.endsAt }
+    else state.delays[e.side][e.uid] = nil end
   end
   if e.type == "cooldown" then
     if e.cd > 0 then
@@ -1208,6 +771,8 @@ local function showVisualEvent(e)
     floatText(L["Dodge"], 1, 1, 1, false)
   elseif e.type == "block" then
     floatText(L["Block"], 0.8, 0.85, 1, false)
+  elseif e.type == "ground" then
+    floatText(L["Grounded"], 0.5, 0.8, 1, false)
   elseif e.type == "stun" then
     floatText(L["Stunned"], 1, 0.65, 0.2, true)
   elseif e.type == "thorns" then
@@ -1239,7 +804,7 @@ local function advanceVisuals(at)
   local discardThrough = last - Battle.MAX_VISUAL_BACKLOG
   while state.nextVisual <= last do
     local step = visuals[state.nextVisual]
-    if state.nextVisual > discardThrough and step.at >= at - Battle.MAX_PROC_LAG - 1e-7 then break end
+    if state.nextVisual > discardThrough and step.at >= at - Playback.MAX_PROC_LAG - 1e-7 then break end
     if not step.paced then state.droppedVisualRoots[step.root] = true end
     state.nextVisual = state.nextVisual + 1
   end
@@ -1287,10 +852,17 @@ local function updateBars(instant)
   for _, sideId in ipairs({ "A", "B" }) do
     local panel = sideId == "A" and screen.mine or screen.theirs
     local channel = state.channels[sideId]
+    local delayed
+    if not channel then
+      for _, pending in pairs(state.delays[sideId]) do
+        if not delayed or pending.endsAt < delayed.endsAt then delayed = pending end
+      end
+      channel = delayed
+    end
     local remaining = channel and channel.endsAt - state.simTime or 0
     if remaining > 0 and not state.finished then
       panel.channel:SetValue(remaining, channel.duration, true)
-      panel.channel.text:SetText(string.format("%s %.1fs", channel.name, remaining))
+      panel.channel.text:SetText(string.format(delayed and "%s in %.1fs" or "%s %.1fs", channel.name, remaining))
       panel.channel:Show()
     else
       panel.channel:Hide()
@@ -1299,7 +871,7 @@ local function updateBars(instant)
   screen.timer:SetText(string.format("%.1fs", state.simTime))
   renderAuras(screen.mine.auraRow, state.auras.A)
   renderAuras(screen.theirs.auraRow, state.auras.B)
-  updateInspector()
+  screen.inspector:Update(state.display)
 end
 
 local function updateProgress()
@@ -1465,7 +1037,7 @@ local function advancePlayback(at, quiet)
     end
     state.nextStep = state.nextStep + 1
   end
-  state.simTime = Battle.PlaybackCombatTime(state.playback, at)
+  state.simTime = Playback.CombatTime(state.playback, at)
   if not quiet then advanceVisuals(at) end
 end
 
@@ -1563,6 +1135,7 @@ local function resetPlayback()
   state.droppedVisualRoots = {}
   state.cooldowns = { A = {}, B = {} }
   state.channels = {}
+  state.delays = { A = {}, B = {} }
   state.display = Util.DeepCopy(state.playback.initial)
   state.soundedNodes = {}
   state.lastMajorAt = -math.huge
@@ -1640,7 +1213,7 @@ function Battle.Show(result, opponent, run)
       A = Util.DeepCopy(result.A.talents or ns.Mastery.Normalize(result.A.classKey, run.talents)),
       B = Util.DeepCopy(result.B.talents or ns.Mastery.Unpack(result.B.classKey, run.round, opponent.build.p) or ns.Mastery.Empty(result.B.classKey)),
     },
-    playback = Battle.BuildPlayback(result),
+    playback = Playback.Build(result),
     speed = ns.db and ns.db.global.settings.speed or 1,
     myName = displayName(run.who),
     theirName = displayName(opponent.build.n or "?"),
@@ -1882,7 +1455,7 @@ function Battle.Create(parent)
   banner:Hide()
   screen.banner = banner
   screen.breakdown = createBreakdown(floatLayer)
-  screen.inspector = createInspector(floatLayer)
+  screen.inspector = ns.UI.BattleInspector.Create(floatLayer, screen, showInspector)
 
   screen:SetScript("OnUpdate", onUpdate)
   screen:SetScript("OnShow", function()

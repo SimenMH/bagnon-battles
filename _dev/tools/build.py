@@ -189,12 +189,16 @@ def main():
     mode.add_argument("--check", action="store_true", help="Validate runtime files without writing a package.")
     mode.add_argument("--dev", nargs="?", const="retail", choices=sorted(WOW_ADDONS),
                       help=f"Copy the runtime files into {DEV_NAME} in a client's AddOns folder (default: retail).")
+    parser.add_argument("--addons-dir", type=Path,
+                        help="Override the AddOns folder used by --dev.")
     options = parser.parse_args()
+    if options.addons_dir is not None and not options.dev:
+        parser.error("--addons-dir requires --dev")
     try:
         if options.check:
             print(f"Validated {len(collect_files(ROOT))} runtime and license files.")
         elif options.dev:
-            target, count = install_dev(ROOT, WOW_ADDONS[options.dev])
+            target, count = install_dev(ROOT, options.addons_dir or WOW_ADDONS[options.dev])
             print(f"Copied {count} runtime and license files to {target}")
         else:
             stage, archive, count = build_package(ROOT)

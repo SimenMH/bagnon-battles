@@ -1,7 +1,8 @@
 local ADDON, ns = ...
+local Util = ns.Util
 
--- Internal selection policy. These affinities never change combat mastery or
--- equipment legality, and are not player-facing item properties.
+
+
 local ShopWeights = {}
 ns.ShopWeights = ShopWeights
 
@@ -56,7 +57,7 @@ end
 function ShopWeights.Affinity(def, classKey, spec)
   local authored = def.shopAffinities and def.shopAffinities[classKey]
   if authored then return authored[spec] or 0 end
-  local tags = def.tagSet or ns.Util.Set(def.tags or {})
+  local tags = def.tagSet or Util.Set(def.tags or {})
   if ABILITY_KINDS[def.kind] then
     local combatSpec = ns.Mastery.Spec(def)
     if combatSpec then return combatSpec == spec and 1 or 0 end
@@ -88,12 +89,6 @@ local function addDefinition(def, flags, resources)
   elseif def.kind == "ammo" then flags.ammo = true end
 end
 
-local function placementOrder(a, b)
-  if a.x ~= b.x then return a.x < b.x end
-  if a.y ~= b.y then return a.y < b.y end
-  if a.id ~= b.id then return a.id < b.id end
-  return (a.rot or 0) < (b.rot or 0)
-end
 
 local function weaponPower(def)
   return ((def.weaponMin or 0) + (def.weaponMax or 0)) / 2 / (def.use and def.use.cd or 2)
@@ -119,11 +114,11 @@ function ShopWeights.Context(classKey, grid, stash, ownedCounts, formPreference)
   for _, id in ipairs(stash or {}) do own(id, 1) end
   context.owned.dualwield = class.dualWield == true and oneHands >= 2
 
-  -- Active configuration is kept separate from future equipment/form options.
-  -- In particular, a Bear Form in the stash must not erase an equipped Cat Form.
+
+
   local placements = {}
   for _, placement in ipairs(grid and grid.items or {}) do placements[#placements + 1] = placement end
-  table.sort(placements, placementOrder)
+  table.sort(placements, Util.PlacementLess)
   local exclusive, forms, melee, shields = {}, {}, {}, {}
   for _, placement in ipairs(placements) do
     local def = ns.Items[placement.id]
@@ -160,7 +155,7 @@ end
 
 local function matchesForm(def, form)
   local tag = form == "bearform" and "bear" or form == "catform" and "cat"
-  return def.use and def.use.requires == form or tag and (def.tagSet or ns.Util.Set(def.tags or {}))[tag]
+  return def.use and def.use.requires == form or tag and (def.tagSet or Util.Set(def.tags or {}))[tag]
 end
 
 function ShopWeights.Fit(def, context)
@@ -171,6 +166,9 @@ function ShopWeights.Fit(def, context)
     local requirements = type(use.requires) == "table" and use.requires or { use.requires }
     for _, flag in ipairs(requirements) do if not owned[flag] then mismatch = true end end
     if use.resource and not (context.resources or {})[use.resource] and not (def.grants or {})[use.resource] then mismatch = true end
+  end
+  for _, flag in ipairs(def.shopFitRequires or {}) do
+    if not owned[flag] then mismatch = true end
   end
   if def.kind == "ammo" and not owned.ranged then mismatch = true end
   local active = context.active or {}
@@ -184,8 +182,8 @@ function ShopWeights.Fit(def, context)
   return mismatch and ShopWeights.MISSING_FIT or 1
 end
 
--- Retained for callers that classify gear relevance. Actual selection uses the
--- normalized mixture below, not this multiplier over the whole candidate pool.
+
+
 function ShopWeights.GearAffinity(def, classKey, talents)
   local shares = ShopWeights.Shares(classKey, talents)
   local relevant = 0
@@ -201,8 +199,8 @@ local function normalise(values)
   if maximum <= 0 then return nil end
   local total, out = 0, {}
   for index, value in ipairs(values) do
-    -- Preserve a positive broad probability even for an authoring range that
-    -- would otherwise underflow during normalization.
+
+
     out[index] = value > 0 and math.max(1e-300, value / maximum) or 0
     total = total + out[index]
   end

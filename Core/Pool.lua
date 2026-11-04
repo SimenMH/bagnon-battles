@@ -60,10 +60,14 @@ local function insert(bucket, index, rec)
   local id, build = rec.id, rec.b
   if index[id] then
     local previous = index[id]
-    if rec.fh and not previous.fh then
-      previous.fh = true
-      previous.rcv = rec.rcv
+    local notOlder = rec.b.s >= previous.b.s
+    local replace = rec.fh and (not previous.fh or notOlder)
+      or not previous.fh and rec.b.s > previous.b.s
+    if replace then
+      previous.b, previous.bot = rec.b, rec.bot
     end
+    if rec.fh or replace then previous.rcv = math.max(previous.rcv, rec.rcv) end
+    previous.fh = previous.fh or rec.fh
     return false, "duplicate"
   end
   local byAuthor, replaceable = 0, {}

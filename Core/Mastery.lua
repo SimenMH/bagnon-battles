@@ -22,19 +22,19 @@ end
 
 Mastery.TREES = {
   WARRIOR = {
-    arms = definition("Arms", "Ability_Warrior_SavageBlow", "Arms abilities and Heroic Strike gain 10% Critical Strike.", "Arms abilities and Heroic Strike gain 25% Critical Strike Damage.", "Every 60 Rage spent on Arms strikes and Heroic Strike: Make an extra melee auto-attack."),
-    fury = definition("Fury", "Spell_Nature_BloodLust", "Fury abilities cost 10% less Rage.", "On melee auto-attack hit: Advance Bloodthirst by 0.5s and other Rage-using melee strikes by 0.25s.", "Every 40 Rage spent on melee abilities: Your next paid direct melee strike deals 20% more damage within 8s. Does not stack."),
-    prot = definition("Protection", "Ability_Defend", "Your equipped shield gains 4 Block Value.", "On block: Restore 3 Rage.", "Paid Protection strikes grant an absorb equal to 75% of Block Value. Shield Slam also absorbs 50% of its stored blocked damage."),
+    arms = definition("Arms", "Ability_Warrior_SavageBlow", "Increases the critical strike chance of your Arms abilities and Heroic Strike by 10%.", "Your Arms abilities and Heroic Strike deal 25% additional critical strike damage.", "Every 60 Rage you spend on Arms strikes and Heroic Strike grants an extra melee attack."),
+    fury = definition("Fury", "Spell_Nature_BloodLust", "Your Fury abilities cost 10% less Rage.", "Your melee auto-attack hits reduce Bloodthirst's cooldown by 0.5 sec and the cooldowns of your other Rage-spending direct melee strikes by 0.25 sec.", "Every 40 Rage you spend on melee abilities empowers your next direct melee strike that spends Rage to deal 20% more damage within 8 sec. This effect does not stack."),
+    prot = definition("Protection", "Ability_Defend", "Increases the Block Value of your equipped shield by 4.", "Blocking an attack restores 3 Rage.", "Protection strikes that spend Rage grant a shield that absorbs damage equal to 75% of your Block Value. Shield Slam also shields you for 50% of the stored blocked damage it consumes."),
   },
   HUNTER = {
-    bm = definition("Beast Mastery", "Ability_Hunter_BeastTaming", "Beast Mastery abilities cost 10% less Focus.", "On pet auto-attack hit: Restore 4 Focus.", "Every 3 pet auto-attack hits: Cast Bite for free, or Claw if you have no Bite."),
-    mm = definition("Marksmanship", "Ability_Marksmanship", "Marksmanship shots gain 8% Critical Strike.", "On Marksmanship shot crit: Restore 5 Mana.", "Every 3 normal Marksmanship shots: Cast Aimed Shot for free."),
-    surv = definition("Survival", "Ability_Hunter_SwiftStrike", "Trap cooldowns are 15% shorter. Survival melee abilities gain 8% Critical Strike.", "Survival abilities deal 25% more damage.", "On trap cast: Cast Serpent Sting for free. Every 3 dodges: Cast Raptor Strike for free."),
+    bm = definition("Beast Mastery", "Ability_Hunter_BeastTaming", "Your Beast Mastery abilities cost 10% less Focus.", "Your pet's auto-attack hits restore 4 Focus.", "Every third pet auto-attack hit casts Bite at no Focus cost, or Claw if Bite is unavailable."),
+    mm = definition("Marksmanship", "Ability_Marksmanship", "Increases the critical strike chance of your Marksmanship shots by 8%.", "Your Marksmanship shot critical strikes restore 5 Mana.", "Every third Marksmanship shot that spends Mana fires an Aimed Shot at no Mana cost. Every eighth regular ranged auto-attack hit reduces that weapon's attack cooldown by 1 sec."),
+    surv = definition("Survival", "Ability_Hunter_SwiftStrike", "Reduces your trap cooldowns by 15% and increases the critical strike chance of your Survival melee abilities by 8%.", "Your Survival abilities deal 25% more damage.", "Using a trap casts Serpent Sting at no Mana cost. Every third dodge grants a Raptor Strike at no Mana cost."),
   },
   DRUID = {
-    balance = definition("Balance", "Spell_Nature_StarFall", "Balance spells cost 10% less Mana.", "On Balance spell crit: Advance Starfire by 1s.", "Every 3 paid Balance spells: Advance Starfire by 4s."),
-    feral = definition("Feral Combat", "Ability_Druid_CatForm", "Feral abilities cost 10% less Energy and Rage.", "Finishers heal 2% maximum health. Every 30 Rage spent on Bear attacks heals 2% maximum health.", "On paid Feral ability crit: Reduce your form attack cooldown by 1s."),
-    resto = definition("Restoration", "Spell_Nature_HealingTouch", "Restoration spells cost 10% less Mana.", "On effective Restoration healing tick: Advance Swiftmend by 0.25s.", "Effective Restoration healing grants an absorb equal to 35% of the healing."),
+    balance = definition("Balance", "Spell_Nature_StarFall", "Your Balance spells cost 10% less Mana.", "Critical strikes from your Balance spells reduce that spell's cooldown by 1 sec, up to once per second.", "Every third Balance spell that spends Mana reduces its own cooldown by 4 sec."),
+    feral = definition("Feral Combat", "Ability_Druid_CatForm", "Your Feral abilities cost 10% less Energy and Rage.", "Finishing moves that consume Combo Points heal you for 2% of your maximum health. Every 30 Rage spent on Bear attacks also heals you for 2% of your maximum health.", "Critical strikes from Feral abilities cast at their normal cost reduce your form's attack cooldown by 1 sec."),
+    resto = definition("Restoration", "Spell_Nature_HealingTouch", "Your Restoration spells cost 10% less Mana.", "Each effective healing tick from your Restoration spells reduces Swiftmend's cooldown by 0.25 sec.", "Your effective Restoration healing shields you for 35% of the health restored."),
   },
 }
 
@@ -134,12 +134,12 @@ function Mastery.Lines(classKey, tag, points)
   local def = Mastery.Definition(classKey, tag)
   if not def then return {} end
   points = points or 0
-  local text = string.format("Spec abilities gain %d%% damage and healing.", points * Mastery.SPEC_BONUS_PCT)
+  local text = string.format("Increases damage and healing from this specialization's abilities by %d%%.", points * Mastery.SPEC_BONUS_PCT)
   if classKey == "WARRIOR" and tag == "arms" then
-    text = string.format("Arms abilities and Heroic Strike gain %d%% damage and healing.", points * Mastery.SPEC_BONUS_PCT)
+    text = string.format("Increases damage and healing from Arms abilities and Heroic Strike by %d%%.", points * Mastery.SPEC_BONUS_PCT)
   end
   if classKey == "SHAMAN" and tag == "enhancement" then
-    text = text .. string.format(" Melee auto-attacks deal %d%% more damage.", points * Mastery.SPEC_BONUS_PCT)
+    text = text .. string.format(" Your melee auto-attacks deal %d%% more damage.", points * Mastery.SPEC_BONUS_PCT)
   end
   local out = { { text = text, active = points > 0, points = 0 } }
   for _, tier in ipairs(def.tiers) do out[#out + 1] = { text = tier.text, active = points >= tier.points, points = tier.points } end

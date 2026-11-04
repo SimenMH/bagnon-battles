@@ -3,78 +3,78 @@ local H = ns.H
 
 ns.RegisterSet{ key = "feralheart", name = "Feralheart Raiment",
   bonuses = {
-    [2] = { triggers = { { on = "anyUse", match = { tag = "feral", anyTag = { "strike" } }, effects = { { type = "dot", key = "rake", school = "physical", tick = 3, coef = 0.08, duration = 9 } } } }, text = "Feral strikes apply Rake's bleed." },
+    [2] = { triggers = { { on = "anyUse", match = { tag = "feral", anyTag = { "strike" } }, effects = { { type = "dot", key = "rake", school = "physical", tick = 3, coef = 0.08, duration = 9 } } } }, text = "Your Feral strikes also apply a bleed lasting 9 seconds." },
     [4] = { triggers = {
       { on = "anyCrit", match = { tag = "finisher" }, effects = { { type = "resource", resource = "combo", amount = 3 } } },
       { on = "anyCrit", healing = false, match = { key = "maul" }, effects = { { type = "resource", resource = "rage", amount = 8 } } },
-    }, text = "Finisher crits restore 3 combo points. Maul crits restore 8 Rage." },
+    }, text = "Critical strikes from your finishing moves restore 3 Combo Points. Critical strikes from Maul restore 8 Rage." },
   } }
 ns.RegisterSet{ key = "cenarion", name = "Cenarion Raiment",
   bonuses = {
-    [2] = { triggers = { { on = "anyUse", match = { tag = "spell" }, condition = "enemyHas:moonfire", effects = { { type = "refresh", key = "moonfire" } } } }, text = "Every spell cast refreshes Moonfire." },
-    [4] = { triggers = { { on = "anyCrit", match = { tag = "spell" }, effects = { { type = "resource", resource = "mana", amount = 20 } } } }, text = "Spell crits refund 20 mana." },
-    [6] = { free = { tag = "spell" }, mods = { match = { tag = "balance" }, cdPct = 40 }, text = "Spells cost nothing and Balance spells recharge 40% faster." },
+    [2] = { triggers = { { on = "anyUse", match = { tag = "spell" }, condition = "enemyHas:moonfire", effects = { { type = "refresh", key = "moonfire" } } } }, text = "Casting a spell refreshes the duration of your active Moonfire." },
+    [4] = { triggers = { { on = "anyCrit", match = { tag = "spell" }, effects = { { type = "resource", resource = "mana", amount = 20 } } } }, text = "Your critical spells restore 20 Mana." },
+    [6] = { free = { tag = "spell" }, mods = { match = { tag = "balance" }, cdPct = 40 }, text = "Your spells consume no Mana, and the cooldowns of your Balance spells are reduced by 40%." },
   } }
 ns.RegisterSet{ key = "stormrage", name = "Stormrage Raiment",
   bonuses = {
-    [2] = { triggers = { { on = "healed", icd = 3, effects = { { type = "absorb", amount = 10, coef = 0.3 } } } }, text = "Your heals also shield you." },
-    [4] = { triggers = { { on = "anyUse", match = { key = "swiftmend" }, effects = { { type = "cast", key = "rejuvenation", ignoreCondition = true }, { type = "cast", key = "regrowth", ignoreCondition = true } } } }, text = "Swiftmend casts your Rejuvenation and Regrowth for free." },
-    [6] = { flags = { "revive" }, mods = { match = { tag = "heal" }, healPct = 100 }, text = "Heals are doubled, and once per battle you return to full health instead of dying." },
+    [2] = { triggers = { { on = "healed", icd = 3, effects = { { type = "absorb", amount = 10, coef = 0.3 } } } }, text = "Restoring Health grants a shield that absorbs 10 damage plus 30% of your Healing Power. This can occur once every 3 seconds." },
+    [4] = { triggers = { { on = "anyUse", match = { key = "swiftmend" }, effects = { { type = "cast", key = "rejuvenation", ignoreCondition = true }, { type = "cast", key = "regrowth", ignoreCondition = true } } } }, text = "Casting Swiftmend also casts your Rejuvenation and Regrowth without consuming Mana." },
+    [6] = { flags = { "revive" }, mods = { match = { tag = "heal" }, healPct = 100 }, text = "Your healing abilities restore 100% more Health. Once per battle, lethal damage restores you to full Health." },
   } }
 
 ns.RegisterSet{ key = "heroism", name = "Battlegear of Heroism",
   bonuses = {
-    [2] = { triggers = { { on = "resourceSpent", resource = "rage", everyAmount = 30, effects = { { type = "buff", stat = "haste", value = 20, duration = 5, key = "heroism_2", name = "Battlegear of Heroism" } } } }, text = "Every 30 rage spent grants 20% haste for 5 seconds." },
+    [2] = { triggers = { { on = "resourceSpent", resource = "rage", everyAmount = 30, effects = { { type = "buff", stat = "haste", value = 20, duration = 5, key = "heroism_2", name = "Battlegear of Heroism" } } } }, text = "Consuming 30 Rage grants 20% Haste for 5 seconds." },
     [4] = { stats = { ap = 30, haste = 10 } },
   } }
 ns.RegisterSet{ key = "might", name = "Battlegear of Might",
   bonuses = {
-    [2] = { triggers = { { on = "block", effects = { { type = "resource", resource = "rage", amount = 4 } } } }, text = "Blocking generates 4 rage." },
+    [2] = { triggers = { { on = "block", effects = { { type = "resource", resource = "rage", amount = 4 } } } }, text = "Blocking an attack generates 4 Rage." },
     [4] = { stats = { block = 20, blockChance = 15 } },
-    [6] = { triggers = { { on = "block", icd = 2, effects = { { type = "cast", key = "shield_slam" } } } }, stats = { block = 30, dr = 25 }, text = "Blocks trigger your Shield Slam for free (2s cooldown)." },
+    [6] = { triggers = { { on = "block", icd = 2, effects = { { type = "cast", key = "shield_slam" } } } }, stats = { block = 30, dr = 25 }, text = "Blocking an attack casts your Shield Slam without consuming Rage. This can occur once every 2 seconds." },
   } }
 ns.RegisterSet{ key = "wrath", name = "Battlegear of Wrath",
   bonuses = {
-    [2] = { triggers = { { on = "anyUse", match = { tag = "strike" }, effects = { { type = "tickDots", match = { tag = "bleed" } } } } }, text = "Using a strike immediately ticks your bleeds." },
+    [2] = { triggers = { { on = "anyUse", match = { tag = "strike" }, effects = { { type = "tickDots", match = { tag = "bleed" } } } } }, text = "Using a strike causes each of your active bleeds to deal one additional tick of damage." },
     [4] = { stats = { crit = 10, critDamage = 25 } },
-    [6] = { double = { tag = "strike" }, stats = { crit = 25, critDamage = 75 }, text = "Strikes hit twice." },
+    [6] = { double = { tag = "strike" }, stats = { crit = 25, critDamage = 75 }, text = "Your strikes hit twice." },
   } }
 
 ns.RegisterSet{ key = "beastmaster", name = "Beastmaster Armor",
   bonuses = {
-    [2] = { triggers = { { on = "anyUse", match = { tag = "pet" }, icd = 2, effects = { { type = "heal", min = 0, max = 0, pctMax = 0.0125 } } } }, text = "Pet abilities heal you for 1.25% maximum Health." },
-    [4] = { triggers = { { on = "resourceSpent", resource = "focus", everyAmount = 35, effects = { { type = "buff", stat = "petPct", value = 25, duration = 6, key = "beastmaster_4", name = "Beastmaster Armor" } } } }, text = "Every 35 Focus spent grants 25% pet damage for 6s." },
+    [2] = { triggers = { { on = "anyUse", match = { tag = "pet" }, icd = 2, effects = { { type = "heal", min = 0, max = 0, pctMax = 0.0125 } } } }, text = "Your pet's attacks and abilities heal you for 1.25% of your maximum Health. This can occur once every 2 seconds." },
+    [4] = { triggers = { { on = "resourceSpent", resource = "focus", everyAmount = 35, effects = { { type = "buff", stat = "petPct", value = 25, duration = 6, key = "beastmaster_4", name = "Beastmaster Armor" } } } }, text = "Consuming 35 Focus increases your pet's damage by 25% for 6 seconds." },
   } }
 ns.RegisterSet{ key = "giantstalker", name = "Giantstalker Armor",
   bonuses = {
-    [2] = { triggers = { { on = "anyUse", match = { key = "aimed_shot" }, effects = { { type = "debuff", stat = "armor", value = 15, duration = 8, key = "giantstalker_2", name = "Giantstalker Armor" } } } }, text = "Aimed Shot strips 15 armor." },
-    [4] = { triggers = { { on = "anyCrit", match = { tag = "shot" }, icd = 3, effects = { { type = "buff", key = "clearcasting", stat = "none", value = 0, free = true, match = { tag = "shot" }, duration = 6, name = "Giantstalker Armor" } } } }, text = "Shot crits make the next shot free." },
-    [6] = { double = { tag = "shot" }, triggers = { { on = "battleStart", effects = { { type = "cdr", target = "all", match = { tag = "shot" }, amount = 60 } } } }, text = "Shots fire twice and start ready." },
+    [2] = { triggers = { { on = "anyUse", match = { key = "aimed_shot" }, effects = { { type = "debuff", stat = "armor", value = 15, duration = 8, key = "giantstalker_2", name = "Giantstalker Armor" } } } }, text = "Using Aimed Shot reduces the enemy's Armor by 15 for 8 seconds." },
+    [4] = { triggers = { { on = "anyCrit", match = { tag = "shot" }, icd = 3, effects = { { type = "buff", key = "clearcasting", stat = "none", value = 0, free = true, match = { tag = "shot" }, duration = 6, name = "Giantstalker Armor" } } } }, text = "Your shot critical strikes cause your shots to consume no Mana for 6 seconds. This can occur once every 3 seconds." },
+    [6] = { double = { tag = "shot" }, triggers = { { on = "battleStart", effects = { { type = "cdr", target = "all", match = { tag = "shot" }, amount = 60 } } } }, text = "Your shots take effect twice, and their cooldowns are ready when battle begins." },
   } }
 ns.RegisterSet{ key = "dragonstalker", name = "Dragonstalker Armor",
   bonuses = {
-    [2] = { double = { key = "serpent_sting" }, text = "Serpent Sting applies two stacks at once." },
-    [4] = { triggers = { { on = "anyUse", match = { tag = "trap" }, effects = { { type = "resource", resource = "mana", amount = 12 } } }, { on = "dotTick", match = { key = "serpent_sting" }, chance = 15, icd = 2, effects = { { type = "stun", duration = 0.5 } } } }, text = "Traps restore 12 Mana. Sting ticks can stagger the enemy." },
-    [6] = { double = { anyTag = { "trap", "sting" } }, flags = { "revive" }, text = "Traps and stings apply twice, and once per battle you return to full health instead of dying." },
+    [2] = { double = { key = "serpent_sting" }, text = "Each use of Serpent Sting applies 2 stacks." },
+    [4] = { triggers = { { on = "anyUse", match = { tag = "trap" }, effects = { { type = "resource", resource = "mana", amount = 12 } } }, { on = "dotTick", match = { key = "serpent_sting" }, chance = 15, icd = 2, effects = { { type = "stun", duration = 0.5 } } } }, text = "Using a trap restores 12 Mana. Each tick of Serpent Sting has a 15% chance to stun the enemy for 0.5 seconds, at most once every 2 seconds." },
+    [6] = { double = { anyTag = { "trap", "sting" } }, flags = { "revive" }, text = "Your traps and stings take effect twice. Once per battle, lethal damage restores you to full Health." },
   } }
 
 ns.RegisterSet{ key = "dreadnaught", name = "Dreadnaught's Battlegear",
   bonuses = {
-    [2] = { triggers = { { on = "resourceSpent", resource = "rage", everyAmount = 40, effects = { { type = "cdr", target = "all", match = { tag = "autoattack" }, amount = 1 } } } }, text = "Every 40 Rage spent advances auto-attacks by 1s." },
-    [4] = { triggers = { { on = "anyCrit", healing = false, match = { tag = "autoattack", anyTag = { "melee" } }, icd = 0.5, effects = { { type = "cdr", target = "all", match = { kind = "ability", tag = "strike", anyTag = { "melee" }, damaging = "direct" }, amount = 0.35, clampReady = true } } } }, text = "Melee auto-attack crits advance your direct melee strikes by 0.35s (0.5s cooldown)." },
-    [6] = { double = { tag = "autoattack" }, stats = { lifesteal = 15 }, text = "Auto-attacks hit twice." },
+    [2] = { triggers = { { on = "resourceSpent", resource = "rage", everyAmount = 40, effects = { { type = "cdr", target = "all", match = { tag = "autoattack" }, amount = 1 } } } }, text = "Consuming 40 Rage reduces the remaining cooldowns of your auto-attacks by 1 second." },
+    [4] = { triggers = { { on = "anyCrit", healing = false, match = { tag = "autoattack", anyTag = { "melee" } }, icd = 0.5, effects = { { type = "cdr", target = "all", match = { kind = "ability", tag = "strike", anyTag = { "melee" }, damaging = "direct" }, amount = 0.35, clampReady = true } } } }, text = "Your melee auto-attack critical strikes reduce the remaining cooldowns of your direct melee strikes by 0.35 seconds. This can occur once every 0.5 seconds." },
+    [6] = { double = { tag = "autoattack" }, stats = { lifesteal = 15 }, text = "Your auto-attacks hit twice." },
   } }
 ns.RegisterSet{ key = "cryptstalker", name = "Cryptstalker Armor",
   bonuses = {
-    [2] = { triggers = { { on = "resourceSpent", resource = "focus", everyAmount = 30, effects = { { type = "resource", resource = "mana", amount = 8 } } } }, text = "Every 30 Focus spent restores 8 Mana." },
-    [4] = { mods = { match = { tag = "pet" }, cdPct = 30 }, text = "Pet ability cooldowns are 30% shorter." },
-    [6] = { double = { tag = "pet" }, triggers = { { on = "anyHit", match = { tag = "pet" }, effects = { { type = "heal", fromEvent = 0.25 } } } }, text = "Pet abilities fire twice. Pet hits heal you for 25% of their damage." },
+    [2] = { triggers = { { on = "resourceSpent", resource = "focus", everyAmount = 30, effects = { { type = "resource", resource = "mana", amount = 8 } } } }, text = "Consuming 30 Focus restores 8 Mana." },
+    [4] = { mods = { match = { tag = "pet" }, cdPct = 20 }, text = "Reduces the cooldowns of your pet's attacks and abilities by 20%." },
+    [6] = { double = { tag = "pet" }, triggers = { { on = "anyHit", match = { tag = "pet" }, effects = { { type = "heal", fromEvent = 0.25 } } } }, text = "Your pet's attacks and abilities take effect twice. Their hits heal you for 25% of the damage dealt." },
   } }
 ns.RegisterSet{ key = "dreamwalker", name = "Dreamwalker Raiment",
   bonuses = {
-    [2] = { triggers = { { on = "anyCrit", healing = false, match = { tag = "feral" }, effects = { { type = "heal", pctMax = 0.02 } } } }, text = "Feral crits heal 2% maximum Health." },
-    [4] = { mods = { match = { tag = "feral" }, dmgPct = 30 }, text = "Feral abilities deal 30% more damage." },
-    [6] = { triggers = { { on = "anyCrit", healing = false, match = { tag = "feral" }, effects = { { type = "resource", resource = "energy", amount = 40 }, { type = "resource", resource = "rage", amount = 20 }, { type = "cdr", target = "all", match = { tag = "feral" }, amount = 2 } } } }, text = "Feral crits restore 40 Energy and 20 Rage. Advance all Feral abilities by 2s." },
+    [2] = { triggers = { { on = "anyCrit", healing = false, match = { tag = "feral" }, effects = { { type = "heal", pctMax = 0.02 } } } }, text = "Your Feral critical strikes heal you for 2% of your maximum Health." },
+    [4] = { mods = { match = { tag = "feral" }, dmgPct = 30 }, text = "Increases the damage of your Feral attacks and abilities by 30%." },
+    [6] = { triggers = { { on = "anyCrit", healing = false, match = { tag = "feral" }, effects = { { type = "resource", resource = "energy", amount = 40 }, { type = "resource", resource = "rage", amount = 20 }, { type = "cdr", target = "all", match = { tag = "feral" }, amount = 2, clampReady = true } } } }, text = "Your Feral critical strikes restore 40 Energy in Cat Form or 20 Rage in Bear Form and reduce the remaining cooldowns of your Feral abilities by 2 seconds." },
   } }
 ns.RegisterSet{ key = "dalrend", name = "Dal'Rend's Arms",
   bonuses = { [2] = { stats = { ap = 30, haste = 10 } } } }

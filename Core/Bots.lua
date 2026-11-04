@@ -23,18 +23,6 @@ Bots.NAMES = {
   "Viggo Brand", "Willa Hartwell", "Wren Alder", "Yara Dalen", "Ylva Reed", "Zara Venn",
 }
 
-local function words(text)
-  local out = {}
-  for key in (text or ""):gmatch("%S+") do out[#out + 1] = key end
-  return out
-end
-
-local PHYSICAL = {
-  "thin_cloth_armor tanned_leather_jerkin heroism_chest wrath_chest dreadnaught_chest", "cape_of_the_brotherhood", "blackstone_ring seal_of_wrynn",
-  "mark_of_fordring onyxia_tooth_pendant", "edgemasters_handguards", "second_wind hand_of_justice",
-  "heroism_head wrath_head", "fine_leather_boots heroism_feet wrath_feet", "seal_of_wrynn blackstone_ring",
-  "wrath_shoulder dreadnaught_shoulder", "wrath_legs dreadnaught_legs", "prospectors_cuffs", "fine_leather_belt",
-}
 local SPELL = {
   "simple_robe thin_cloth_armor cenarion_chest", "songstone_of_ironforge seal_of_wrynn", "spritecaster_cape",
   "briarwood_reed", "orb_of_the_darkmoon", "cenarion_head stormrage_head", "fine_leather_gloves cenarion_hands stormrage_hands", "second_wind",
@@ -130,8 +118,8 @@ Bots.ARCHETYPES = {
   DRUID = {
     { id = "balance", spec = "balance", secondary = "resto", weapons = { STAVES }, core = "wrath moonfire starfire", train = "starfire wrath", payoff = "starfire", gear = SPELL,
       support = "improved_wrath natures_grace moonglow improved_moonfire vengeance barkskin idol_of_the_moon" },
-    { id = "cat_bleed", spec = "feral", secondary = "resto", weapons = { "worn_dagger carving_knife manual_crowd_pummeler" }, core = "cat_form claw rake rip", train = "claw rip", payoff = "claw", gear = FERAL_GEAR,
-      support = "tigers_fury ferocious_bite blood_frenzy savage_fury omen_of_clarity rejuvenation furor" },
+    { id = "cat_rotation", spec = "feral", secondary = "resto", weapons = { "worn_dagger carving_knife manual_crowd_pummeler" }, core = "cat_form claw rake rip ferocious_bite", train = "claw rip ferocious_bite", payoff = "claw", gear = FERAL_GEAR,
+      support = "tigers_fury blood_frenzy savage_fury omen_of_clarity rejuvenation furor" },
     { id = "bear", spec = "feral", secondary = "resto", weapons = { "worn_dagger spiked_club oak_mallet manual_crowd_pummeler warden_staff" }, core = "bear_form maul enrage_druid rejuvenation", train = "maul frenzied_regeneration", payoff = "maul",
       gear = { "thin_cloth_armor tanned_leather_jerkin feralheart_chest", "naglering seal_of_wrynn", "prospectors_cuffs bracers_of_the_eclipse", "medallion_of_grand_marshal_morris", "idol_of_brutality", "second_wind", "feralheart_head dreamwalker_head", "cape_of_the_brotherhood", "fine_leather_boots", "fine_leather_belt" },
       support = "furor frenzied_regeneration swipe demoralizing_roar barkskin healing_touch savage_fury thick_hide primal_fury bash brutal_impact" },
@@ -143,6 +131,15 @@ Bots.ARCHETYPES = {
 }
 
 local ranged = ns.IsRangedWeapon
+
+local function words(text)
+  local out = {}
+  for key in (text or ""):gmatch("%S+") do
+    local def = ns.ItemsByKey[key]
+    out[#out + 1] = def and def.stockKey or key
+  end
+  return out
+end
 
 local function relation(source, target)
   local score = 0
@@ -158,15 +155,8 @@ local function relation(source, target)
 end
 
 local function hasSpatialRules(def)
-  for _, rule in ipairs(def.adjacency) do if rule.side or rule.corners or rule.empty then return true end end
+  for _, rule in ipairs(ns.EffectRules(def)) do if rule.side or rule.corners or rule.empty or rule.coating then return true end end
   return false
-end
-
-local function placementOrder(a, b)
-  if a.x ~= b.x then return a.x < b.x end
-  if a.y ~= b.y then return a.y < b.y end
-  if a.id ~= b.id then return a.id < b.id end
-  return (a.rot or 0) < (b.rot or 0)
 end
 
 local function spatialLayoutScore(grid, probe, formAttack)
@@ -175,19 +165,23 @@ local function spatialLayoutScore(grid, probe, formAttack)
     local def = ns.Items[p.id]
     return not (formAttack and def.kind == "weapon" and not ranged(def))
   end
+  local inactive = {}
+  for _, p in ipairs(grid.items) do if not active(p) then inactive[p.uid] = true end end
+  local coatings = ns.ResolveCoatings(grid, nil, inactive)
   for _, source in ipairs(grid.items) do
     if active(source) then
       local def = ns.Items[source.id]
-      for _, rule in ipairs(def.adjacency) do
+      for _, rule in ipairs(ns.EffectRules(def)) do
         local matches = 0
         if rule.empty then
           matches = #grid:EffectCells(source, rule)
           if rule.once then matches = math.min(1, matches) end
         elseif not rule.inside then
           local recipients = grid:EffectNeighbors(source, rule)
-          table.sort(recipients, placementOrder)
+          table.sort(recipients, Util.PlacementLess)
           for _, recipient in ipairs(recipients) do
-            if active(recipient) and Util.MatchDef(ns.Items[recipient.id], rule.match) then
+            if active(recipient) and Util.MatchDef(ns.Items[recipient.id], rule.match)
+              and (not rule.coating or coatings[source.uid] and coatings[source.uid][recipient.uid]) then
               matches = matches + 1
               if rule.once then break end
             end
@@ -195,24 +189,6 @@ local function spatialLayoutScore(grid, probe, formAttack)
         end
         score = score + matches * 16
         if source == probe and matches > 0 then ownLink = true end
-      end
-      for _, recipient in ipairs(grid:EffectNeighbors(source)) do
-        if active(recipient) then
-          local target = ns.Items[recipient.id]
-          for _, trigger in ipairs(def.triggers) do
-            if trigger.on:find("adjacent", 1, true) and Util.MatchDef(target, trigger.match) then
-              score = score + 16
-              if source == probe then ownLink = true end
-            end
-            for _, effect in ipairs(trigger.effects) do
-              if effect.target == "neighbors" and Util.MatchDef(target, effect.match)
-                and ((effect.type ~= "cdr" and effect.type ~= "cast") or target.use) then
-                score = score + 16
-                if source == probe then ownLink = true end
-              end
-            end
-          end
-        end
       end
     end
   end
@@ -232,8 +208,8 @@ local function placementProbe(grid, def, x, y, rot)
   return view, probe
 end
 
--- Developer tooling also exercises this candidate score directly. Comparing
--- layouts includes lost empty-space bonuses and incoming directional supports.
+
+
 function Bots.PlacementScore(grid, def, x, y, rot)
   local formAttack = false
   for _, p in ipairs(grid.items) do if ns.Items[p.id].replacesWeapon then formAttack = true break end end
@@ -314,6 +290,7 @@ local function flagsFor(grid)
     if def.kind == "weapon" then
       flags.weapon = true
       flags[ranged(def) and "ranged" or "melee"] = true
+      if def.weaponType then flags[def.weaponType] = true end
       if not ranged(def) and def.hands == 2 then flags.twohand = true end
     end
     if def.kind == "shield" then flags.shield = true end
@@ -345,12 +322,14 @@ function Bots.Generate(classKey, round, seed, archetypeId)
   local budget = math.floor(ns.Economy.CumulativeGold(round) * (0.77 + rng:Next() * 0.12 - 0.10 * math.max(0, 8 - round) / 7)) + ns.StarterValue(class)
   local gold, grid = budget, ns.Grid.New()
   local desiredRank = round >= 10 + rng:Range(0, 3) and rng:Chance(65) and 3 or round >= 4 + rng:Range(0, 3) and 2 or 1
-  if classKey == "WARRIOR" then
-    local base = ns.ItemsByKey[words(plan.train)[1]]
+  local trainingBase = ns.ItemsByKey[words(plan.train)[1]]
+  local curatedTraining = trainingBase and trainingBase.rankProfile ~= nil
+  if classKey == "WARRIOR" or curatedTraining then
+    local base = trainingBase
     desiredRank = 1
     for rank = 2, ns.Ranks.MaxRank(base) do
       local target = ns.Ranks.Definition(base, rank)
-      if target and target.minRound <= round then desiredRank = rank end
+      if target and rank <= ns.Ranks.TrainableMaxRank(base) and target.minRound <= round then desiredRank = rank end
     end
     if desiredRank > 2 and rng:Chance(25) then desiredRank = desiredRank - 1 end
   end
@@ -510,7 +489,7 @@ function Bots.Generate(classKey, round, seed, archetypeId)
       if (current.baseKey or current.key) == key then
         local target = ns.Ranks.Definition(current, rank)
         local price = ns.Ranks.TrainingCost(current, rank)
-        if target and (current.rank or 1) + 1 == rank and rank <= ns.Ranks.MaxRank(current)
+        if target and (current.rank or 1) + 1 == rank and rank <= ns.Ranks.TrainableMaxRank(current)
           and target.minRound <= round and price <= gold then
           p.id, gold = target.id, gold - price
           trainingSpent = trainingSpent + price
@@ -545,14 +524,14 @@ function Bots.Generate(classKey, round, seed, archetypeId)
   for index = 3, #gear do remainingGear[#remainingGear + 1] = gear[index] end
   rng:Shuffle(remainingGear)
   for _, options in ipairs(remainingGear) do if rng:Chance(88) then add(options) end end
-  if classKey == "WARRIOR" then
+  if classKey == "WARRIOR" or curatedTraining then
     if round >= 6 and training[2] and rng:Chance(55) and train(training[2], 2) and round >= 12 and rng:Chance(35) then train(training[2], 3) end
     if round >= 7 and rng:Chance(60) then
       for _, key in ipairs(words(plan.supportTrain)) do if train(key, 2) then break end end
     end
-    -- A mature fixture spends affordable training gold before hoarding it.
-    -- Limit this to its authored cores and one support, rather than filling the
-    -- bag with extra spenders or inventing free equipment/rank upgrades.
+
+
+
     if round >= 10 then
       local function finishTraining(key)
         for _, p in ipairs(grid.items) do

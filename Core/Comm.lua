@@ -177,6 +177,7 @@ function Comm.JoinChannel()
 end
 
 function Comm.Start()
+  ns.CommTransport.SetEnabled(settings().share)
   if Comm.started then
     if Comm.JoinChannel() then
       Comm.SendHello()
@@ -193,6 +194,7 @@ function Comm.Start()
     end
   end)
   if ns.Addon then
+    ns.Addon:RegisterEvent("ADDON_LOADED", function() ns.CommTransport.EnsureInstalled() end)
     ns.Addon:RegisterEvent("CHAT_MSG_CHANNEL_NOTICE", function(_, kind, _, _, _, _, _, _, _, channelName)
       if channelName ~= ns.CHANNEL then return end
       if kind == "YOU_LEFT" then Comm.channelIndex = nil return end
@@ -218,6 +220,7 @@ function Comm.SetSharing(enabled)
     lastHello, lastRequest, pendingRequest = 0, 0, nil
   end
   config.share = enabled
+  ns.CommTransport.SetEnabled(enabled)
   if enabled then Comm.Start() end
   return enabled
 end

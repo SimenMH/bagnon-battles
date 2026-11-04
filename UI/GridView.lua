@@ -26,8 +26,8 @@ end
 
 local FACING_LABELS = { "^", ">", "v", "<" }
 
--- Catalog glyphs have no inventory context. A synthetic usable one-cell band
--- shows potential effects, using the combat resolver rather than real bag fit.
+
+
 function GridView.GlyphGeometry(def, rotation)
   local shape = ns.RotationCells(def, rotation or 0)
   local grid = setmetatable({ W = shape.w + 2, H = shape.h + 2, cells = {}, occ = {}, items = {}, bags = {} }, Grid)
@@ -44,17 +44,7 @@ function GridView.GlyphGeometry(def, rotation)
   local function include(rule)
     for _, key in ipairs(grid:EffectCells(placement, rule)) do selected[key] = true end
   end
-  for _, rule in ipairs(def.adjacency or {}) do if not rule.inside then include(rule) end end
-  local orthogonal = false
-  local function effects(list)
-    for _, effect in ipairs(list or {}) do if effect.target == "neighbors" then orthogonal = true end end
-  end
-  effects(def.use and def.use.effects)
-  for _, trigger in ipairs(def.triggers or {}) do
-    if trigger.on and trigger.on:find("^adjacent") then orthogonal = true end
-    effects(trigger.effects)
-  end
-  if orthogonal then include() end
+  for _, rule in ipairs(ns.EffectRules(def)) do if not rule.inside then include(rule) end end
   local keys, cells = {}, {}
   for key in pairs(selected) do keys[#keys + 1] = key end
   table.sort(keys)
@@ -70,7 +60,7 @@ end
 
 function GridView.SetFacingBadge(frame, def, rotation, cell, gap)
   local directional = false
-  for _, rule in ipairs(def and def.adjacency or {}) do
+  for _, rule in ipairs(ns.EffectRules(def)) do
     if rule.side then directional = true break end
   end
   if not directional then
@@ -91,7 +81,7 @@ function GridView.SetFacingBadge(frame, def, rotation, cell, gap)
   end
   if not frame.facingText then frame.facingText = T.Number(frame, 13, T.C.gold, nil, "OUTLINE") end
   frame.facingText:ClearAllPoints()
-  -- Anchor inside an occupied silhouette cell, including nonrectangular shapes.
+
   frame.facingText:SetPoint("CENTER", frame, "TOPLEFT",
     (best[1] + 0.5) * cell + dx * (cell * 0.5 - 6) - (gap or 0) / 2,
     -(best[2] + 0.5) * cell - dy * (cell * 0.5 - 6) + (gap or 0) / 2)
@@ -99,18 +89,16 @@ function GridView.SetFacingBadge(frame, def, rotation, cell, gap)
   frame.facingText:Show()
 end
 
-local function placementOrder(a, b)
-  if a.x ~= b.x then return a.x < b.x end
-  if a.y ~= b.y then return a.y < b.y end
-  if a.id ~= b.id then return a.id < b.id end
-  return (a.rot or 0) < (b.rot or 0)
-end
+local placementOrder = ns.Util.PlacementLess
 
 function GridView.RuleRecipients(grid, placement, rule, suppressed)
   local out = {}
   if suppressed and suppressed[placement.uid] then return out end
+  local coatings = rule.coating and ns.ResolveCoatings(grid, suppressed, suppressed and suppressed.inactiveActors)
   for _, recipient in ipairs(grid:EffectNeighbors(placement, rule)) do
-    if not (suppressed and suppressed[recipient.uid]) and ns.Util.MatchDef(ns.Items[recipient.id], rule.match) then
+    if not (suppressed and suppressed[recipient.uid]) and ns.Util.MatchDef(ns.Items[recipient.id], rule.match)
+      and not (rule.activeSource and suppressed and suppressed.inactiveActors and suppressed.inactiveActors[recipient.uid])
+      and (not rule.coating or coatings[placement.uid] and coatings[placement.uid][recipient.uid]) then
       out[#out + 1] = recipient
     end
   end
@@ -119,12 +107,12 @@ function GridView.RuleRecipients(grid, placement, rule, suppressed)
   return out
 end
 
--- Geometry comes from the same resolver as combat. Potential cells remain
--- visible when empty, occupied by a nonmatching item, or excluded by once.
+
+
 function GridView.EffectHints(grid, placement, suppressed)
   local states, targets, seen = {}, {}, {}
   local def = ns.Items[placement.id]
-  for _, rule in ipairs(def and def.adjacency or {}) do
+  for _, rule in ipairs(ns.EffectRules(def)) do
     if not rule.inside then
       local regionRule = rule
       if rule.empty then
@@ -779,7 +767,8 @@ function GridView:ClearPreview()
 end
 
 function GridView.PreviewPlacement(grid, def, x, y, rot, replacedUid)
-  local preview = setmetatable({ W = grid.W, H = grid.H, cells = grid.cells, occ = {}, items = {}, bags = grid.bags }, Grid)
+  local preview = setmetatable({ W = grid.W, H = grid.H, cells = grid.cells, occ = {}, items = {}, bags = grid.bags,
+    home = grid.home, nextUid = grid.nextUid + 1 }, Grid)
   for key, placement in pairs(grid.occ) do
     if placement.uid ~= replacedUid then preview.occ[key] = placement end
   end
@@ -823,7 +812,18 @@ function GridView:ShowPreview(def, x, y, rot, valid, replacedUid)
     self.previewFacing:Show()
     if valid and self.grid then
       local preview, placement = GridView.PreviewPlacement(self.grid, def, x, y, rot, replacedUid)
-      self:ShowEffectHints(placement, preview)
+      local suppressed = self.suppressedUids
+      if self.previewFighter then
+        local fighter = ns.Util.ShallowCopy(self.previewFighter)
+        fighter.grid = preview
+        local side = ns.Sim.PreviewStats(fighter)
+        suppressed = { inactiveActors = {} }
+        for _, item in ipairs(side.items) do
+          if item.suppressed then suppressed[item.uid] = true end
+          if item.statStick or item.def.use and not item.enabled then suppressed.inactiveActors[item.uid] = true end
+        end
+      end
+      self:ShowEffectHints(placement, preview, suppressed)
     end
   end
 end
@@ -859,14 +859,6 @@ function GridView:FlashItem(uid, duration)
   f.flash:SetVertexColor(1, 0.95, 0.7, 1)
   T.Flash(f.flash, duration or 0.4)
   T.Pop(f, 1.1, 0.15)
-end
-
-function GridView:StartCooldown(uid, duration)
-  local f = self.itemFrames[uid]
-  if not f or not duration or duration <= 0 then return end
-  f.cooldown:Show()
-  f.cooldown:Resume()
-  f.cooldown:SetCooldown(GetTime(), duration)
 end
 
 function GridView:ClearCooldowns()

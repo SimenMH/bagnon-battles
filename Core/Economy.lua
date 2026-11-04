@@ -24,7 +24,7 @@ end
 
 Economy.INCOME = { 13, 13, 15, 16, 18, 20, 22, 24, 26, 28, 30, 32, 33, 34, 35, 36, 36, 36, 36, 36 }
 Economy.HEALTH = { 150, 210, 300, 425, 650, 900, 1150, 1450, 1750, 2050, 2350, 2650, 2950, 3250, 3600, 3950, 4300, 4650, 5000, 5400 }
--- Rage generation follows power progression independently of the pacing Health buffer.
+
 Economy.RAGE_REFERENCE_HEALTH = { 150, 190, 230, 275, 377, 501, 643, 801, 977, 1207, 1460, 1620, 1780, 1940, 2160, 2380, 2600, 2800, 3020, 3240 }
 
 Economy.RARITY_ODDS = {
@@ -80,6 +80,8 @@ function Economy.RarityOdds(round, category)
 end
 
 function Economy.StockKey(def)
+  local shared = def.stockKey and ns.ItemsByKey[def.stockKey]
+  if shared then return shared.id end
   local base = def.baseKey and ns.ItemsByKey[def.baseKey]
   return base and base.id or def.id
 end
@@ -120,7 +122,10 @@ function Economy.FormPreference(grid, stash)
   local equipped, stored, intended = {}, {}, {}
   local function inspect(def, forms)
     if not def then return end
-    if def.kind == "form" and (def.provides == "bearform" or def.provides == "catform") then forms[def.provides] = true end
+    if def.kind == "form" then
+      local provided = type(def.provides) == "table" and def.provides or { def.provides }
+      for _, flag in ipairs(provided) do if flag == "bearform" or flag == "catform" then forms[flag] = true end end
+    end
     if Economy.ShopCategory(def) == "ability" then
       for _, form in ipairs({ "bearform", "catform" }) do if matchesForm(def, form) then intended[form] = true end end
     end
@@ -210,7 +215,7 @@ function Economy.GearAffinity(def, classKey, talents)
   return ns.ShopWeights.GearAffinity(def, classKey, talents)
 end
 
-local function pickByQuality(rng, pool, quality, exclude, category, bucket, talents, formPreference, classKey, shopContext)
+local function pickByQuality(rng, pool, quality, exclude, category, bucket, talents, classKey, shopContext)
   local candidates = {}
   for i = 1, #pool do
     local def = pool[i]
@@ -223,15 +228,15 @@ local function pickByQuality(rng, pool, quality, exclude, category, bucket, tale
   return ns.ShopWeights.Pick(rng, candidates, classKey, talents, shopContext)
 end
 
-local function pickOffer(rng, pool, quality, exclude, category, bucket, allowBag, round, talents, formPreference, classKey, shopContext)
+local function pickOffer(rng, pool, quality, exclude, category, bucket, allowBag, round, talents, classKey, shopContext)
   for q = quality, 1, -1 do
     local def
     if bucket == "bag" then
       if allowBag then def = pickBag(rng, pool, round, q, exclude, classKey) end
     else
-      def = pickByQuality(rng, pool, q, exclude, category, bucket, talents, formPreference, classKey, shopContext)
+      def = pickByQuality(rng, pool, q, exclude, category, bucket, talents, classKey, shopContext)
     end
-    if not def then def = pickByQuality(rng, pool, q, exclude, category, nil, talents, formPreference, classKey, shopContext) end
+    if not def then def = pickByQuality(rng, pool, q, exclude, category, nil, talents, classKey, shopContext) end
     if not def and allowBag then def = pickBag(rng, pool, round, q, exclude, classKey) end
     if def then return def end
   end
@@ -243,7 +248,7 @@ function Economy.GenerateShop(rng, classKey, round, bagsOwned, owned, reservedId
   local pool = ns.GetShopPool(classKey, round)
   local counts = {}
   for id, amount in pairs(owned or {}) do addStock(counts, id, amount) end
-  -- Only owned items inform fit; offers drawn later are not purchases.
+
   shopContext = shopContext or ns.ShopWeights.Context(classKey, nil, nil, owned, formPreference)
   local groups = { ability = {}, gear = {} }
   local sales = {}
@@ -288,7 +293,7 @@ function Economy.GenerateShop(rng, classKey, round, bagsOwned, owned, reservedId
           if def then break end
         end
       end
-      if not def then def = pickOffer(rng, pool, quality, exclude, category, bucket, allowBag, round, talents, formPreference, classKey, shopContext) end
+      if not def then def = pickOffer(rng, pool, quality, exclude, category, bucket, allowBag, round, talents, classKey, shopContext) end
       if category == "ability" and companion and not exclude[companion.id] and companion.quality <= quality then def = companion end
       if def then
         draw(def)

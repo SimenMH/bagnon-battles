@@ -16,22 +16,24 @@ local OUTPUT = { damage = true, dot = true, hot = true, heal = true, absorb = tr
 local DERIVED = { "rots", "distinctRots", "cellCount", "tagSet", "classSet", "ranks", "rankable", "rankIds" }
 local ABILITY_KINDS = { ability = true, form = true, pet = true, ammo = true }
 
--- An authored profile is explicit per rank; it does not opt every passive into
--- training or change the legacy curves. Numeric overrides must target an existing
--- stat/effect field or the existing use cooldown. They cannot change identity,
--- availability or stock metadata.
--- rankProfile = { maxRank = 5, ranks = {
---   [4] = { id = ..., minRound = ..., trainingCost = ..., scale = {
---     mult = ..., power = ..., cost = ..., offensiveMana = ... },
---     resourceCost = ..., overrides = { ["use.effects.1.coef"] = ... },
---     caps = { ["use.effects.2.value"] = ... } }, ... } }
+
+
+
+
+
+
+
+
+
 local PROFILE_KEYS = { maxRank = true, ranks = true }
 local RULE_KEYS = { id = true, minRound = true, trainingCost = true, scale = true,
   resourceCost = true, overrides = true, caps = true }
 local SCALE_KEYS = { mult = true, power = true, cost = true, offensiveMana = true }
 local EFFECT_FIELDS = { min = true, max = true, tick = true, amount = true, flat = true,
   coef = true, pctMax = true, blockScale = true, value = true, perPoint = true,
-  perPointPctMax = true, weaponPct = true, duration = true, count = true, gearCoef = true, gearCap = true, fromEvent = true }
+  perPointPctMax = true, weaponPct = true, duration = true, count = true, gearCoef = true, gearCap = true, fromEvent = true,
+  damagePerResource = true, controlChance = true, fraction = true, healCoef = true, healAmount = true, fromPaid = true,
+  durationPerPoint = true, valuePerPoint = true, charges = true, bankScale = true, stacksFromEvent = true }
 local TRIGGER_FIELDS = { chance = true, every = true, everyAmount = true, icd = true }
 
 local function finite(value)
@@ -69,12 +71,39 @@ end
 
 local function scalarTarget(base, path)
   if type(path) ~= "string" then return nil end
+  local revival = path:match("^revive%.(health)$") or path:match("^revive%.(mana)$")
+  if revival and base.revive and type(base.revive[revival]) == "number" then return { "revive", revival }, "reviveFraction" end
   if path == "use.cd" and base.use and type(base.use.cd) == "number" then return { "use", "cd" }, "cd" end
+  if path == "wardReflection.chance" and base.wardReflection and type(base.wardReflection.chance) == "number" then return { "wardReflection", "chance" }, "chance" end
+  local gearIndex = path:match("^gearBonuses%.([1-9]%d*)%.coef$")
+  if gearIndex and base.gearBonuses and base.gearBonuses[tonumber(gearIndex)] and type(base.gearBonuses[tonumber(gearIndex)].coef) == "number" then
+    return { "gearBonuses", tonumber(gearIndex), "coef" }, "coef"
+  end
+  local adjacencyIndex, group, modifier = path:match("^adjacency%.([1-9]%d*)%.([%a][%w_]*)%.([%a][%w_]*)$")
+  if adjacencyIndex and (group == "mods" or group == "selfMods" or group == "stats") then
+    local keys = group == "stats" and ns.Sim.STAT_KEYS or ns.Sim.MOD_KEYS
+    local valid = false
+    for _, key in ipairs(keys) do if key == modifier then valid = true break end end
+    local rule = base.adjacency and base.adjacency[tonumber(adjacencyIndex)]
+    if valid and rule and rule[group] and type(rule[group][modifier]) == "number" then
+      return { "adjacency", tonumber(adjacencyIndex), group, modifier }, modifier
+    end
+    return nil
+  end
   local stat = path:match("^stats%.([%a][%w_]*)$")
   if stat then
     local valid = false
     for _, key in ipairs(ns.Sim and ns.Sim.STAT_KEYS or {}) do if stat == key then valid = true break end end
     if valid and base.stats and type(base.stats[stat]) == "number" then return { "stats", stat }, stat end
+    return nil
+  end
+  local windowIndex, periodicIndex, periodicField = path:match("^use%.effects%.([1-9]%d*)%.periodic%.effects%.([1-9]%d*)%.([%a][%w_]*)$")
+  if windowIndex and EFFECT_FIELDS[periodicField] then
+    local window = base.use and base.use.effects[tonumber(windowIndex)]
+    local effect = window and window.periodic and window.periodic.effects[tonumber(periodicIndex)]
+    if effect and type(effect[periodicField]) == "number" then
+      return { "use", "effects", tonumber(windowIndex), "periodic", "effects", tonumber(periodicIndex), periodicField }, periodicField, effect
+    end
     return nil
   end
   local effectIndex, field = path:match("^use%.effects%.([1-9]%d*)%.([%a][%w_]*)$")
@@ -102,15 +131,24 @@ end
 
 local function validScalar(field, value, effect)
   if not finite(value) then return false end
+  if field == "reviveFraction" then return value >= 0 and value <= 1 end
+  if field == "fromPaid" then return value >= 0 and value <= 1 end
+  if field == "charges" then return effect and effect.type == "buff" and integer(value, 0, 20) end
+  if field == "bankScale" then return effect and effect.type == "damage" and value >= 0 end
+  if field == "stacksFromEvent" then return effect and (effect.type == "buff" or effect.type == "debuff") and effect.stack == true and value > 0 end
+  if field == "pctMax" and effect and effect.type == "resource" then return value >= 0 and value <= 1 end
   if field == "cd" then return value > 0 end
   if effect and effect.stat == "dr" and field == "value" and value > 90 then return false end
   if field == "chance" then return value >= 0 and value <= 100 end
+  if field == "controlChance" then return value >= 0 and value <= 100 end
+  if field == "damagePerResource" then return value > 0 end
+  if field == "healCoef" or field == "healAmount" then return value >= 0 end
   if field == "every" then return integer(value, 1) end
   if field == "everyAmount" then return value > 0 end
   if field == "count" then return integer(value, 0) end
   if field == "duration" or field == "icd" or field == "min" or field == "max" or field == "tick"
     or field == "amount" or field == "coef" or field == "pctMax" or field == "perPointPctMax"
-    or field == "weaponPct" or field == "gearCoef" or field == "gearCap" or field == "fromEvent" then return value >= 0 end
+    or field == "weaponPct" or field == "gearCoef" or field == "gearCap" or field == "fromEvent" or field == "fraction" then return value >= 0 end
   return true
 end
 
@@ -226,9 +264,14 @@ function Ranks.NextRank(base, learned)
   if not base then return nil end
   learned = learned or 1
   if not integer(learned, 1) then return nil end
-  for rank = learned + 1, Ranks.MaxRank(base) do
+  for rank = learned + 1, Ranks.TrainableMaxRank(base) do
     if Ranks.Definition(base, rank) then return rank end
   end
+end
+
+function Ranks.TrainableMaxRank(base)
+  base = Ranks.Base(base)
+  return math.min(Ranks.MaxRank(base), base and base.trainingMaxRank or math.huge)
 end
 
 function Ranks.Page(base, page, size, focusRank)
@@ -236,7 +279,8 @@ function Ranks.Page(base, page, size, focusRank)
   size = integer(size, 1) and size or 3
   local ranks, focus = {}, nil
   if base then
-    for rank = 1, Ranks.MaxRank(base) do
+    local visibleMaximum = math.max(Ranks.TrainableMaxRank(base), focusRank or 1)
+    for rank = 1, math.min(Ranks.MaxRank(base), visibleMaximum) do
       if Ranks.Definition(base, rank) then
         ranks[#ranks + 1] = rank
         if rank == focusRank then focus = #ranks end
@@ -288,9 +332,9 @@ function Ranks.Investment(base, rank)
   return value
 end
 
--- This is a historical bound, used with min() for acquisition validation and
--- max() for old saved resale values. Authored profiles never inherit a legacy
--- discount or refund allowance: their bound is the actual training investment.
+
+
+
 function Ranks.LegacyTrainingCost(base, rank)
   base = Ranks.Base(base)
   local investment = base and Ranks.Investment(base, rank)
@@ -310,7 +354,9 @@ local function scaleEffects(effects, scale, rank)
           local power = (e.type == "damage" or e.type == "dot") and POWER[key]
             or (e.type == "heal" or e.type == "hot") and (key == "pctMax" or key == "perPointPctMax")
           local factor = power and scale.power or mult
-          if DECIMAL[key] then
+          if factor == 1 then
+            e[key] = value
+          elseif DECIMAL[key] then
             local precision = key == "perPointPctMax" and 100000 or 100
             e[key] = math.floor(value * factor * precision + 0.5) / precision
           else e[key] = math.floor(value * factor + 0.5) end
@@ -320,7 +366,7 @@ local function scaleEffects(effects, scale, rank)
       if e.type == "damage" and (e.weapon or e.weaponSelf) then e.weaponPct = math.floor((e.weaponPct or 1) * scale.power * 20 + 0.5) / 20 end
       if (e.type == "buff" or e.type == "debuff") and e.stat == "dr" then e.value = math.min(90, e.value) end
       if e.type == "buff" and e.stat == "none" and e.double then e.duration = math.floor(e.duration * mult + 0.5) end
-    elseif e.type == "stun" and e.rankScale ~= false then
+    elseif e.type == "stun" and e.rankScale ~= false and mult ~= 1 then
       e.duration = math.floor(e.duration * mult * 10 + 0.5) / 10
     end
   end
@@ -366,7 +412,7 @@ function Ranks.Register(base, rank)
       def.use.cost = math.min(cost, resourceCapacity(base) - reserve)
     end
     if rule.resourceCost ~= nil then def.use.cost = rule.resourceCost end
-    if base.use.spendMax then
+    if base.use.spendMax and not base.rankProfile then
       def.use.spendMax = math.min(resourceCapacity(base), math.max(def.use.cost or 0, base.use.spendMax + 10 * (rank - 1)))
     end
   end

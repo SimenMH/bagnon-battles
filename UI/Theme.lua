@@ -7,6 +7,7 @@ ns.UI.Theme = T
 
 T.CELL = 50
 T.CELL_GAP = 3
+T.RESOURCE_ORDER = { "mana", "rage", "energy", "focus", "combo" }
 
 local MEDIA = "Interface\\AddOns\\" .. ADDON .. "\\Media\\"
 
@@ -17,19 +18,13 @@ T.TEX = {
   borderSmall = MEDIA .. "border_small",
   outline = MEDIA .. "outline",
   outlineSmall = MEDIA .. "outline_small",
-  gloss = MEDIA .. "gloss",
   glossSmall = MEDIA .. "gloss_small",
-  slot = MEDIA .. "slot",
   glow = MEDIA .. "glow",
   glowSquare = MEDIA .. "glow_square",
-  gradient = MEDIA .. "gradient",
   ring = MEDIA .. "ring",
   circle = MEDIA .. "circle",
   burst = MEDIA .. "burst",
   shine = MEDIA .. "shine",
-  pixel = MEDIA .. "pixel",
-  noise = MEDIA .. "noise",
-  vignette = MEDIA .. "vignette",
   heart = MEDIA .. "heart",
   trophy = MEDIA .. "trophy",
   white = "Interface\\Buttons\\WHITE8X8",
@@ -56,7 +51,6 @@ T.C = {
   bg3 = { 0.24, 0.20, 0.20, 1 },
   bg4 = { 0.32, 0.27, 0.26, 1 },
   line = { 0.38, 0.32, 0.30, 1 },
-  lineHi = { 0.58, 0.50, 0.44, 1 },
   ink = { 0.03, 0.02, 0.03, 1 },
   gold = { 0.98, 0.78, 0.34, 1 },
   goldDim = { 0.68, 0.53, 0.24, 1 },
@@ -65,11 +59,7 @@ T.C = {
   dim = { 0.50, 0.45, 0.42, 1 },
   good = { 0.45, 0.88, 0.50, 1 },
   bad = { 0.95, 0.38, 0.38, 1 },
-  warn = { 0.98, 0.75, 0.32, 1 },
-  blue = { 0.45, 0.72, 1.00, 1 },
   cell = { 0.62, 0.50, 0.34, 1 },
-  cellFaint = { 0.45, 0.42, 0.44, 1 },
-  onGold = { 0.16, 0.10, 0.02, 1 },
 }
 
 T.BAG_TINTS = {
@@ -216,8 +206,7 @@ function T.Display(parent, size, color, text)
 end
 
 function T.Label(parent, text)
-  local fs = T.Text(parent, 11, T.C.dim, text and text:upper() or nil)
-  return fs
+  return T.Text(parent, 11, T.C.dim, text and text:upper() or nil)
 end
 
 function T.Font(parent, template, text, justify)
@@ -287,16 +276,9 @@ function NineSlice:HideCenter()
   self.parts.c:Hide()
 end
 
-function NineSlice:SetBlendMode(mode)
-  for _, tex in pairs(self.parts) do tex:SetBlendMode(mode) end
-end
-
 local PANELS = {
-  window = { fill = T.C.bg0, outline = T.C.ink, rim = T.C.gold, rimAlpha = 0.55, corner = 18, shadow = true, noise = true },
   panel = { fill = T.C.bg1, outline = T.C.ink, rim = { 1, 1, 1 }, rimAlpha = 0.07, corner = 16 },
-  well = { fill = T.C.bg2, outline = T.C.ink, corner = 16, inset = true },
   card = { fill = T.C.bg3, outline = T.C.ink, rim = { 1, 1, 1 }, rimAlpha = 0.10, corner = 14, lift = true },
-  flat = { fill = T.C.bg1, corner = 14 },
   pill = { fill = T.C.bg2, outline = T.C.ink, outlineAlpha = 0.8, corner = 10, small = true },
 }
 
@@ -308,16 +290,6 @@ function T.Panel(parent, style, opts)
   local corner = opts.corner or s.corner
   f.fill = T.NineSlice(f, small and T.TEX.panelSmall or T.TEX.panel, corner, "BACKGROUND", 0)
   f.fill:SetColor(rgb(opts.fill or s.fill))
-  if s.noise then
-    local noise = f:CreateTexture(nil, "BACKGROUND", nil, 1)
-    noise:SetTexture(T.TEX.noise, "REPEAT", "REPEAT")
-    noise:SetHorizTile(true)
-    noise:SetVertTile(true)
-    noise:SetPoint("TOPLEFT", corner, -corner)
-    noise:SetPoint("BOTTOMRIGHT", -corner, corner)
-    noise:SetVertexColor(1, 1, 1, 0.12)
-    f.noise = noise
-  end
   if s.lift then
     local lift = f:CreateTexture(nil, "BACKGROUND", nil, -1)
     lift:SetTexture(T.TEX.glowSquare)
@@ -350,19 +322,8 @@ function T.Panel(parent, style, opts)
     p.r:SetPoint("TOPLEFT", p.tr, "BOTTOMLEFT") p.r:SetPoint("BOTTOMRIGHT", p.br, "TOPRIGHT")
     p.c:SetPoint("TOPLEFT", p.tl, "BOTTOMRIGHT") p.c:SetPoint("BOTTOMRIGHT", p.br, "TOPLEFT")
   end
-  if s.inset then
-    local sh = f:CreateTexture(nil, "BORDER", nil, 1)
-    sh:SetTexture(T.TEX.gradient)
-    sh:SetVertexColor(0, 0, 0, 0.45)
-    sh:SetHeight(14)
-    sh:SetPoint("TOPLEFT", f, "TOPLEFT", corner, -3)
-    sh:SetPoint("TOPRIGHT", f, "TOPRIGHT", -corner, -3)
-    f.insetShadow = sh
-  end
-  if s.shadow then T.CreateShadow(f, 30, 0.85) end
   function f:SetFillColor(r, g, b, a) self.fill:SetColor(r, g, b, a or 1) end
   function f:SetBorderColor(r, g, b, a) if self.border then self.border:SetColor(r, g, b, a or 1) end end
-  function f:SetRimColor(r, g, b, a) if self.rim then self.rim:SetColor(r, g, b, a or 1) end end
   return f
 end
 
@@ -418,11 +379,7 @@ function T.Chip(parent, height)
 end
 
 function T.Inset(parent, opts)
-  local f = CreateFrame(opts and opts.frameType or "Frame", opts and opts.name, parent, "InsetFrameTemplate")
-  function f:SetFillColor() end
-  function f:SetBorderColor() end
-  function f:SetRimColor() end
-  return f
+  return CreateFrame(opts and opts.frameType or "Frame", opts and opts.name, parent, "InsetFrameTemplate")
 end
 
 function T.SetHighlighted(button, on)
@@ -436,7 +393,7 @@ function T.CreateButton(parent, text, width, height, style, fontSize)
   local fs = b.GetFontString and b:GetFontString()
   if type(fs) == "table" and fs.SetFont then
     fs:SetFont(T.FONT, fontSize or 12, "")
-    if style == "primary" or style == "gold" then fs:SetTextColor(T.RGB(T.C.gold)) end
+    if style == "primary" then fs:SetTextColor(T.RGB(T.C.gold)) end
   end
   b.SetHighlighted = T.SetHighlighted
   return b
@@ -476,7 +433,7 @@ function T.IconButton(parent, size, texture, opts)
   return b
 end
 
-function T.CreateTab(parent, text, width)
+function T.CreateTab(parent, text)
   local b = CreateFrame("Button", nil, parent, "PanelTopTabButtonTemplate")
   b:SetText(text or "")
   if PanelTemplates_TabResize then pcall(PanelTemplates_TabResize, b, 12) end
@@ -539,7 +496,6 @@ function T.CreateItemGlyph(parent, cellSize)
       texture:Show()
     end
   end
-  function glyph:SetRotation(rotation) self:SetItem(self.def, rotation) end
   return glyph
 end
 

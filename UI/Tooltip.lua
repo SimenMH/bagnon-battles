@@ -30,6 +30,12 @@ function Tooltip.ContextLines(def, context, target)
     lines[#lines + 1] = { text = text, r = r or 0.75, g = g or 0.75, b = b or 0.75 }
   end
   if context and context.items then
+    local item = type(target) == "table" and context.byUid and context.byUid[target.uid]
+    local blockerKey = item and item.reason and item.reason:match("^blocked:(.+)$")
+    if blockerKey then
+      local blocker = ns.ItemsByKey[blockerKey]
+      add("Inactive while " .. (blocker and blocker.name or blockerKey) .. " is active.", 1, 0.55, 0.4)
+    end
     local missing = {}
     local function check(effects)
       for _, effect in ipairs(effects or {}) do
@@ -50,6 +56,24 @@ function Tooltip.ContextLines(def, context, target)
     check(def.use and def.use.effects)
     for _, trigger in ipairs(def.triggers or {}) do check(trigger.effects) end
   end
+  if def.coating and context and context.byUid and type(target) == "table" then
+    local source = context.byUid[target.uid]
+    if source then
+      local function names(weapons)
+        local out = {}
+        for uid in pairs(weapons or {}) do
+          local weapon = context.byUid[uid]
+          if weapon then out[#out + 1] = weapon.def.name end
+        end
+        table.sort(out)
+        return table.concat(out, ", ")
+      end
+      local active, conflicts = names(source.coatedWeapons), names(source.coatingConflicts)
+      if active ~= "" then add("Coats " .. active .. ".", 0.35, 1, 0.45) end
+      if conflicts ~= "" then add("Multiple poisons affect " .. conflicts .. ". Each weapon can have one poison.", 1, 0.55, 0.4)
+      elseif active == "" then add("Requires an adjacent equipped melee weapon.", 1, 0.55, 0.4) end
+    end
+  end
   if def.kind == "weapon" then
     local ranged = ns.IsRangedWeapon(def)
     local item = context and type(target) == "table" and context.byUid and context.byUid[target.uid]
@@ -62,9 +86,9 @@ function Tooltip.ContextLines(def, context, target)
       if item.equipped == false or item.suppressed then
         add("Unequipped weapon. No stats or effects.", 1, 0.55, 0.4)
       elseif form and not ranged and not attacking then
-        add("Equipped. Stats still apply; attacks are replaced by " .. form .. ".", 1, 0.75, 0.4)
+        add("Weapon attacks replaced by " .. form, 1, 0.75, 0.4)
       elseif not ranged and not attacking and context.weaponRanged and context.weaponRanged.def.weaponType == "wand" then
-        add("Equipped. Stats still apply; attacks use your wand.", 1, 0.75, 0.4)
+        add("Weapon attacks replaced by wand", 1, 0.75, 0.4)
       elseif attacking and not ranged and context.weaponMelee and item.uid ~= context.weaponMelee.uid then
         add("Off-hand attacks deal 50% damage.", 1, 0.75, 0.4)
       end
@@ -316,7 +340,7 @@ function Tooltip.Show(owner, def, opts)
   tooltip:ClearLines()
   if opts.label then tooltip:AddLine(opts.label, 1, 0.82, 0) end
   local r, g, b = T.QualityColor(def.quality)
-  if def.rank or def.rankable then
+  if def.rank or def.rankable and ns.Ranks.TrainableMaxRank(def) > 1 then
     tooltip:AddDoubleLine(def.name, string.format(ns.L["Rank %d"], def.rank or 1), r, g, b, 1, 1, 1)
   else
     tooltip:AddLine(def.name, r, g, b)

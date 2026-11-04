@@ -22,6 +22,7 @@ local announceCrafted
 local homeMove
 local screen
 local onItemEnter
+local openTraining
 
 local function run() return ns.run end
 
@@ -127,8 +128,7 @@ end
 local function setCursor(c)
   cancelHomeMove()
   if screen and screen.trainingOverlay then
-    screen.trainingTarget = nil
-    screen.trainingOverlay:Hide()
+    screen.trainingOverlay:Close()
   end
   if screen and screen.talentOverlay then screen.talentOverlay:Hide() end
   cursor = c
@@ -295,11 +295,13 @@ function Shop.RefreshGrid()
   hideHomeTooltip()
   hideBagTooltip()
   local disabled = disabledUids()
-  local suppressed = {}
+  local suppressed = { inactiveActors = {} }
   for _, item in ipairs(Shop.preview and Shop.preview.items or {}) do
     if item.suppressed then suppressed[item.uid] = true end
+    if item.statStick or item.def.use and not item.enabled then suppressed.inactiveActors[item.uid] = true end
   end
   screen.grid.suppressedUids = suppressed
+  screen.grid.previewFighter = { classKey = run().class, round = run().round, talents = run().talents }
   screen.grid:SetGrid(run().grid, disabled)
   Shop.RefreshSide()
   Shop.RefreshStash()
@@ -418,8 +420,8 @@ function Shop.RefreshOffers()
   screen.gearEmpty:SetShown(nextSlot.gear == capacity + 1)
 end
 
--- Reminder timing follows actual class abilities and authored rank profiles.
--- Availability of a new item alone is not a new training tier.
+
+
 function Shop.UnlockedTrainingRank(classKey, round)
   local unlockedRank
   for _, base in ipairs(ns.GetShopPool(classKey, round)) do
@@ -427,7 +429,7 @@ function Shop.UnlockedTrainingRank(classKey, round)
       local odds, obtainable = ns.Economy.RarityOdds(round, ns.Economy.ShopCategory(base)), false
       for quality = base.quality, #odds do if odds[quality] > 0 then obtainable = true break end end
       if obtainable then
-        for rank = 2, ns.Ranks.MaxRank(base) do
+        for rank = 2, ns.Ranks.TrainableMaxRank(base) do
           local training = ns.Ranks.TrainingRule(base, rank)
           if ns.Ranks.Definition(base, rank) and training and training.minRound == round
             and (not unlockedRank or rank > unlockedRank) then unlockedRank = rank end
@@ -441,7 +443,7 @@ end
 function Shop.RefreshAll()
   Shop.RefreshOffers()
   Shop.RefreshGrid()
-  if Shop.RefreshTraining then Shop.RefreshTraining() end
+  if screen then screen.trainingOverlay:Refresh() end
   if screen and screen.talentOverlay then screen.talentOverlay:Refresh() end
   local r = run()
   if screen and r and r.phase == "shop" and screen:IsVisible()
@@ -629,10 +631,11 @@ local function commitPlacement(def, x, y, rot)
   end
   local p, err = r:PlaceHeld(def, x, y, rot, cursor.cargo, cursor.uid)
   if not p then return false, err end
+  local crafted = r:CheckCrafting()
   T.PlaySound(T.SOUND_DROP)
   Shop.RefreshAll()
   screen.grid:PopItem(p.uid)
-  recordCrafted(r:CheckCrafting())
+  recordCrafted(crafted)
   return true
 end
 
@@ -843,7 +846,7 @@ local function onItemClick(p, button)
   p = currentPlacement(p)
   if not p then Shop.RefreshGrid() return end
   if button == "RightButton" then
-    if IsShiftKeyDown() then sellPlacement(p) else Shop.OpenTraining(p) end
+    if IsShiftKeyDown() then sellPlacement(p) else openTraining(p) end
     return
   end
   pickUpFromGrid(p)
@@ -851,42 +854,23 @@ end
 
 function Shop.SynergyTargets(grid, p, suppressed)
   local def = ns.Items[p.id]
-  local neighbors = grid:EffectNeighbors(p)
   local affected, seen = {}, {}
   local function add(other)
     if not seen[other] then affected[#affected + 1] = other seen[other] = true end
   end
-  for _, rule in ipairs(def.adjacency) do
+  for _, rule in ipairs(ns.EffectRules(def)) do
     for _, n in ipairs(ns.UI.GridView.RuleRecipients(grid, p, rule, suppressed)) do add(n) end
   end
-  for _, n in ipairs(neighbors) do
-    local nd = ns.Items[n.id]
-    for _, trig in ipairs(nd.triggers) do
-      if trig.on and trig.on:find("^adjacent") and Util.MatchDef(def, trig.match) then add(n) end
-    end
-    for _, trig in ipairs(def.triggers) do
-      for _, e in ipairs(trig.effects) do
-        if e.type == "cdr" and e.target == "neighbors" and Util.MatchDef(nd, e.match) then add(n) end
-      end
-    end
-  end
-  -- Incoming supports obey the same corner exclusions and once recipient
-  -- order as the simulator, including ordinary orthogonal rules.
+
+
   for _, n in ipairs(grid.items) do
     if n ~= p then
-      for _, rule in ipairs(ns.Items[n.id].adjacency) do
+      for _, rule in ipairs(ns.EffectRules(ns.Items[n.id])) do
         if not rule.empty and not rule.inside then
           for _, recipient in ipairs(ns.UI.GridView.RuleRecipients(grid, n, rule, suppressed)) do
             if recipient == p then add(n) break end
           end
         end
-      end
-    end
-  end
-  for _, trig in ipairs(def.triggers) do
-    if trig.on and trig.on:find("^adjacent") then
-      for _, n in ipairs(neighbors) do
-        if Util.MatchDef(ns.Items[n.id], trig.match) then add(n) end
       end
     end
   end
@@ -970,42 +954,16 @@ end
 local function lockIn()
   local r = run()
   if not r or r.phase ~= "shop" then return end
-  screen.trainingOverlay:Hide()
-  screen.trainingTarget = nil
+  screen.trainingOverlay:Close()
   if screen.talentOverlay then screen.talentOverlay:Hide() end
   if cursor or homeMove then cancelCursor() end
   startSearch()
 end
 
-local function chooseRank(rank)
-  local r = run()
-  if not r or not screen.trainingTarget then return end
-  local info = r:TrainingInfo(screen.trainingTarget)
-  if cursor or not info or info.def.id ~= screen.trainingId then
-    screen.trainingTarget = nil
-    screen.trainingOverlay:Hide()
-    return
-  end
-  local def, err
-  local training = rank == info.nextRank
-  if training then
-    def, err = r:Train(screen.trainingTarget)
-  else
-    def, err = r:SetRank(screen.trainingTarget, rank)
-  end
-  if not def then T.Error(err) return end
-  screen.trainingId = def.id
-  if training then screen.trainingPage = nil end
-  T.PlaySound(training and T.SOUND_TRAIN or T.SOUND_CLICK)
-  ns.Addon:SaveRun()
-  Shop.RefreshAll()
-end
-
-function Shop.OpenTraining(target)
+openTraining = function(target)
   local r = run()
   if not screen or not r or r.phase ~= "shop" or cursor or homeMove then return end
-  local info = r:TrainingInfo(target)
-  if not info then return end
+  if not r:TrainingInfo(target) then return end
   if screen.talentOverlay then screen.talentOverlay:Hide() end
   hideHomeTooltip()
   hideBagTooltip()
@@ -1013,93 +971,7 @@ function Shop.OpenTraining(target)
   screen.grid.lastHoverX, screen.grid.lastHoverY, screen.grid.lastHoverAlt = nil, nil, nil
   screen.grid:ClearPreview()
   screen.grid:ClearGlow()
-  screen.trainingTarget = target
-  screen.trainingId = info.def.id
-  screen.trainingPage = nil
-  Shop.RefreshTraining()
-  screen.trainingOverlay:Show()
-  ns.UI.Tooltip.Hide()
-  T.PlaySound(T.SOUND_CLICK)
-end
-
-function Shop.RefreshTraining()
-  if not screen then return end
-  local r = run()
-  local overlay = screen.trainingOverlay
-  if not r or not screen.trainingTarget then overlay:Hide() return end
-  local info = r:TrainingInfo(screen.trainingTarget)
-  if not info or info.def.id ~= screen.trainingId or r.phase ~= "shop" then
-    screen.trainingTarget = nil
-    overlay:Hide()
-    return
-  end
-  overlay.title:SetText(info.base.name)
-  local slots = ns.Ranks.MaxRank(info.base) > 3 and 5 or 3
-  local ranks, page, pages = ns.Ranks.Page(info.base, screen.trainingPage, slots, info.nextRank or info.rank)
-  local gap, width = slots > 3 and 8 or 16, slots > 3 and 126 or 190
-  local available = overlay:GetWidth()
-  if available and available > 0 then width = math.min(width, math.floor((available - 32 - (slots - 1) * gap) / slots)) end
-  screen.trainingPage = page
-  overlay.previous:SetShown(pages > 1)
-  overlay.next:SetShown(pages > 1)
-  overlay.previous:SetEnabled(page > 1)
-  overlay.next:SetEnabled(page < pages)
-  overlay.pageLabel:SetShown(pages > 1)
-  overlay.pageLabel:SetText(string.format("%d / %d", page, pages))
-  for i, card in ipairs(overlay.cards) do
-    local rank = ranks[i]
-    local def = rank and ns.Ranks.Definition(info.base, rank)
-    card.rank = rank
-    if def then
-      card:SetSize(width, 175)
-      card:ClearAllPoints()
-      card:SetPoint("CENTER", overlay, "CENTER", (i - (slots + 1) / 2) * (width + gap), -10)
-      for _, label in ipairs({ card.name, card.kind, card.price, card.note }) do label:SetWidth(width - 16) end
-      card:Show()
-      card.def = def
-      local previousRank = rank - 1
-      while previousRank > 0 and not ns.Ranks.Definition(info.base, previousRank) do previousRank = previousRank - 1 end
-      card.compare = previousRank > 0 and ns.Ranks.Definition(info.base, previousRank) or nil
-      T.SetItemIcon(card.iconSlot.icon, def.icon)
-      card.iconSlot.icon:Show()
-      card.iconSlot:SetQuality(def.quality)
-      local qr, qg, qb = T.QualityColor(def.quality)
-      card.name:SetText(string.format(L["Rank %d"], rank))
-      card.name:SetTextColor(qr, qg, qb)
-      local use = def.use
-      if use then
-        local timing = use.once and "Once per battle" or ns.Describe.Rate(use.cd) .. "s"
-        card.kind:SetText(string.format("%s %s / %s", ns.Describe.Rate(use.cost or 0), ns.RESOURCE_NAMES[use.resource] or "", timing))
-      else
-        card.kind:SetText(L["Triggered attack"])
-      end
-      if rank > info.learned then
-        card.price:SetText(string.format("%s  %s%d", L["Train"], T.GOLD_ICON, ns.Ranks.TrainingCost(info.base, rank)))
-        card.price:Show()
-      else
-        card.price:SetText("")
-        card.price:Hide()
-      end
-      if rank == info.rank then
-        card.note:SetText(L["Selected"])
-        card:SetEnabled(false)
-      elseif rank <= info.learned then
-        card.note:SetText(L["Use this rank"])
-        card:SetEnabled(true)
-      elseif rank == info.nextRank then
-        card.note:SetText(info.canTrain and "" or info.reason)
-        card:SetEnabled(info.canTrain)
-      else
-        card.note:SetText(string.format(L["Learn Rank %d first"], previousRank))
-        card:SetEnabled(false)
-      end
-      card:SetAlpha((rank <= info.learned or info.canTrain and rank == info.nextRank) and 1 or 0.55)
-    else
-      card:Hide()
-      card.def = nil
-      card.compare = nil
-    end
-  end
+  screen.trainingOverlay:Open(target)
 end
 
 local function createCard(parent)
@@ -1373,8 +1245,7 @@ function Shop.Create(parent)
     local r = run()
     if not r or r.phase ~= "shop" then return end
     if cursor or homeMove then cancelCursor() end
-    screen.trainingTarget = nil
-    screen.trainingOverlay:Hide()
+    screen.trainingOverlay:Close()
     screen.talentOverlay:Open()
     T.PlaySound(T.SOUND_CLICK)
   end)
@@ -1401,7 +1272,7 @@ function Shop.Create(parent)
       if cursor then stashCursor() return end
       if self.def then
         if button == "RightButton" and (self.def.rankable or self.def.rank) then
-          Shop.OpenTraining(self.index)
+          openTraining(self.index)
         else
           pickUpFromStash(self.index)
         end
@@ -1429,94 +1300,7 @@ function Shop.Create(parent)
   screen.chips = {}
   main:SetScript("OnSizeChanged", function() layoutChips() end)
 
-  local overlay = CreateFrame("Frame", nil, board)
-  overlay:SetAllPoints(board)
-  overlay:SetFrameLevel(board:GetFrameLevel() + 20)
-  overlay:EnableMouse(true)
-  overlay.dim = overlay:CreateTexture(nil, "BACKGROUND")
-  overlay.dim:SetTexture(T.TEX.white)
-  overlay.dim:SetVertexColor(0, 0, 0, 0.7)
-  overlay.dim:SetAllPoints()
-  overlay.title = T.Title(overlay, 18, T.C.gold)
-  overlay.title:SetPoint("CENTER", overlay, "CENTER", 0, 100)
-  overlay.cards = {}
-  for i = 1, 5 do
-    local card = T.Panel(overlay, "card", { frameType = "Button" })
-    card:SetSize(190, 175)
-    card:SetPoint("CENTER", overlay, "CENTER", (i - 2) * 206, -10)
-    card.iconSlot = T.CreateSlot(card, 56)
-    card.iconSlot:SetPoint("TOP", card, "TOP", 0, -12)
-    card.iconSlot:EnableMouse(false)
-    card.name = T.Text(card, 13, T.C.text)
-    card.name:SetPoint("TOP", card.iconSlot, "BOTTOM", 0, -8)
-    card.name:SetSize(170, 16)
-    card.name:SetJustifyH("CENTER")
-    card.name:SetWordWrap(false)
-    card.kind = T.Text(card, 11, T.C.dim)
-    card.kind:SetPoint("TOP", card.name, "BOTTOM", 0, -3)
-    card.kind:SetSize(170, 14)
-    card.kind:SetJustifyH("CENTER")
-    card.kind:SetWordWrap(false)
-    card.rank = i
-    card.price = T.Text(card, 13, T.C.gold)
-    card.price:SetPoint("BOTTOM", card, "BOTTOM", 0, 32)
-    card.price:SetSize(170, 18)
-    card.price:SetJustifyH("CENTER")
-    card.price:SetWordWrap(false)
-    card.note = T.Text(card, 11, T.C.gold)
-    card.note:SetPoint("BOTTOM", card, "BOTTOM", 0, 10)
-    card.note:SetSize(170, 14)
-    card.note:SetJustifyH("CENTER")
-    card.note:SetWordWrap(false)
-    if card.SetMotionScriptsWhileDisabled then card:SetMotionScriptsWhileDisabled(true) end
-    card:SetScript("OnClick", function(self) chooseRank(self.rank) end)
-    card:SetScript("OnEnter", function(self)
-      self:SetFillColor(T.RGB(T.C.bg4))
-      self:SetBorderColor(T.RGB(T.C.gold))
-      if self.def then
-        ns.UI.Tooltip.ShowRankComparison(self, self.compare, self.def, { run = run(), context = Shop.preview, above = overlay.title })
-      end
-    end)
-    card:SetScript("OnLeave", function(self)
-      self:SetFillColor(T.RGB(T.C.bg3))
-      self:SetBorderColor(T.C.ink[1], T.C.ink[2], T.C.ink[3], 0.95)
-      ns.UI.Tooltip.Hide()
-    end)
-    overlay.cards[i] = card
-  end
-  overlay.close = T.CreateButton(overlay, L["Done"], 120, 26, "default", 12)
-  overlay.close:SetPoint("TOP", overlay, "CENTER", 0, -112)
-  overlay.close:SetScript("OnClick", function()
-    screen.trainingTarget = nil
-    overlay:Hide()
-    ns.UI.Tooltip.Hide()
-    T.PlaySound(T.SOUND_CLICK)
-  end)
-  overlay.previous = T.CreateButton(overlay, L["Previous"], 84, 26, "default", 12)
-  overlay.previous:SetPoint("RIGHT", overlay.close, "LEFT", -14, 0)
-  overlay.previous:SetScript("OnClick", function()
-    screen.trainingPage = (screen.trainingPage or 1) - 1
-    ns.UI.Tooltip.Hide()
-    Shop.RefreshTraining()
-    T.PlaySound(T.SOUND_CLICK)
-  end)
-  overlay.next = T.CreateButton(overlay, L["Next"], 84, 26, "default", 12)
-  overlay.next:SetPoint("LEFT", overlay.close, "RIGHT", 14, 0)
-  overlay.next:SetScript("OnClick", function()
-    screen.trainingPage = (screen.trainingPage or 1) + 1
-    ns.UI.Tooltip.Hide()
-    Shop.RefreshTraining()
-    T.PlaySound(T.SOUND_CLICK)
-  end)
-  overlay.pageLabel = T.Text(overlay, 11, T.C.muted)
-  overlay.pageLabel:SetPoint("TOP", overlay.close, "BOTTOM", 0, -5)
-  overlay.previous:Hide()
-  overlay.next:Hide()
-  overlay.pageLabel:Hide()
-  overlay:SetScript("OnHide", function() ns.UI.Tooltip.Hide() end)
-  overlay:SetScript("OnSizeChanged", function(self) if self:IsShown() then Shop.RefreshTraining() end end)
-  overlay:Hide()
-  screen.trainingOverlay = overlay
+  screen.trainingOverlay = ns.UI.Training.Create(board, Shop.RefreshAll, function() return Shop.preview end)
 
   local search = CreateFrame("Frame", nil, screen)
   search:SetAllPoints()
@@ -1546,8 +1330,7 @@ function Shop.Create(parent)
     if cursor or homeMove then cancelCursor() end
     if not cursor then endHold(true) end
     cancelSearch(true)
-    screen.trainingTarget = nil
-    screen.trainingOverlay:Hide()
+    screen.trainingOverlay:Close()
     screen.talentOverlay:Hide()
     ns.UI.Tooltip.Hide()
   end)
@@ -1568,9 +1351,7 @@ function Shop.OnKey(key)
     return true
   end
   if key == "ESCAPE" and screen and screen.trainingOverlay:IsShown() then
-    screen.trainingTarget = nil
-    screen.trainingOverlay:Hide()
-    ns.UI.Tooltip.Hide()
+    screen.trainingOverlay:Close()
     T.PlaySound(T.SOUND_CLICK)
     return true
   end

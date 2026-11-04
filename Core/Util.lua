@@ -3,11 +3,18 @@ local Util = {}
 ns.Util = Util
 
 local floor, max, min = math.floor, math.max, math.min
+local MODULUS = 2147483647
+local MULT = 16807
+local TWO32 = 4294967296
 
 local RNG = {}
 RNG.__index = RNG
-local MODULUS = 2147483647
-local MULT    = 16807
+
+Util.MATCH_FIELDS = {
+  hands = true, kind = true, key = true, tag = true, notTag = true, damaging = true, anyTag = true,
+  weaponType = true, anyWeaponType = true, slot = true, set = true, quality = true, minQuality = true,
+  notKind = true, usable = true, prepared = true, channeled = true, healing = true,
+}
 
 function Util.NewRNG(seed)
   seed = floor(math.abs(tonumber(seed) or 1)) % MODULUS
@@ -15,47 +22,6 @@ function Util.NewRNG(seed)
   return setmetatable({ state = seed }, RNG)
 end
 
-function RNG:Next()
-  self.state = (self.state * MULT) % MODULUS
-  return (self.state - 1) / (MODULUS - 1)
-end
-
-function RNG:Range(lo, hi)
-  if hi <= lo then return lo end
-  return lo + floor(self:Next() * (hi - lo + 1))
-end
-
-function RNG:Chance(pct)
-  return self:Next() * 100 < pct
-end
-
-function RNG:Pick(list)
-  if #list == 0 then return nil end
-  return list[self:Range(1, #list)]
-end
-
-function RNG:PickWeighted(entries)
-  local total = 0
-  for i = 1, #entries do total = total + (entries[i].weight or 0) end
-  if total <= 0 then return nil end
-  local roll = self:Next() * total
-  local acc = 0
-  for i = 1, #entries do
-    acc = acc + (entries[i].weight or 0)
-    if roll < acc then return entries[i].value, i end
-  end
-  return entries[#entries].value, #entries
-end
-
-function RNG:Shuffle(list)
-  for i = #list, 2, -1 do
-    local j = self:Range(1, i)
-    list[i], list[j] = list[j], list[i]
-  end
-  return list
-end
-
-local TWO32 = 4294967296
 function Util.Hash32(str)
   local h = 5381
   for i = 1, #str do
@@ -96,6 +62,13 @@ function Util.SortedKeys(t)
   return keys
 end
 
+function Util.PlacementLess(a, b)
+  if a.x ~= b.x then return a.x < b.x end
+  if a.y ~= b.y then return a.y < b.y end
+  if a.id ~= b.id then return a.id < b.id end
+  return (a.rot or 0) < (b.rot or 0)
+end
+
 function Util.Count(t)
   local n = 0
   for _ in pairs(t) do n = n + 1 end
@@ -120,11 +93,11 @@ function Util.Trim(s)
   return (s:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
-Util.MATCH_FIELDS = Util.Set{ "hands", "kind", "key", "tag", "notTag", "damaging", "anyTag", "weaponType", "anyWeaponType",
-  "slot", "set", "quality", "minQuality", "notKind" }
-
 function Util.MatchDef(def, filter)
   if not filter then return true end
+  if filter.usable ~= nil and (def.use ~= nil) ~= filter.usable then return false end
+  if filter.prepared ~= nil and (def.use ~= nil and def.use.prepare ~= nil) ~= filter.prepared then return false end
+  if filter.channeled ~= nil and (def.use ~= nil and def.use.channel ~= nil) ~= filter.channeled then return false end
   if filter.hands and def.hands ~= filter.hands then return false end
   if filter.kind and def.kind ~= filter.kind then return false end
   if filter.key and def.key ~= filter.key and def.baseKey ~= filter.key then return false end
@@ -133,9 +106,17 @@ function Util.MatchDef(def, filter)
   if filter.damaging then
     local damaging = false
     for _, effect in ipairs(def.use and def.use.effects or {}) do
-      if effect.type == "damage" or (effect.type == "dot" and filter.damaging ~= "direct") then damaging = true break end
+      if effect.type == "damage" or effect.type == "drain" and (effect.damagePerResource or 0) > 0
+        or effect.type == "dot" and not effect.drainResource and (filter.damaging ~= "direct" or effect.directTicks) then damaging = true break end
     end
     if not damaging then return false end
+  end
+  if filter.healing ~= nil then
+    local healing = false
+    for _, effect in ipairs(def.use and def.use.effects or {}) do
+      if effect.type == "heal" or effect.type == "hot" then healing = true break end
+    end
+    if healing ~= filter.healing then return false end
   end
   if filter.anyTag then
     local ok = false
@@ -168,4 +149,44 @@ end
 function Util.FormatPct(n)
   if n == floor(n) then return string.format("%d%%", n) end
   return (string.format("%.2f", n):gsub("0+$", ""):gsub("%.$", "")) .. "%"
+end
+
+function RNG:Next()
+  self.state = (self.state * MULT) % MODULUS
+  return (self.state - 1) / (MODULUS - 1)
+end
+
+function RNG:Range(lo, hi)
+  if hi <= lo then return lo end
+  return lo + floor(self:Next() * (hi - lo + 1))
+end
+
+function RNG:Chance(pct)
+  return self:Next() * 100 < pct
+end
+
+function RNG:Pick(list)
+  if #list == 0 then return nil end
+  return list[self:Range(1, #list)]
+end
+
+function RNG:PickWeighted(entries)
+  local total = 0
+  for i = 1, #entries do total = total + (entries[i].weight or 0) end
+  if total <= 0 then return nil end
+  local roll = self:Next() * total
+  local acc = 0
+  for i = 1, #entries do
+    acc = acc + (entries[i].weight or 0)
+    if roll < acc then return entries[i].value, i end
+  end
+  return entries[#entries].value, #entries
+end
+
+function RNG:Shuffle(list)
+  for i = #list, 2, -1 do
+    local j = self:Range(1, i)
+    list[i], list[j] = list[j], list[i]
+  end
+  return list
 end

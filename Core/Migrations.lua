@@ -12,9 +12,9 @@ Migrations.MAX_BACKUPS = 5
 local MIN_LOCAL_VERSION = { WARRIOR = 13, HUNTER = 15, DRUID = 16, PALADIN = 21, ROGUE = 21, PRIEST = 21, SHAMAN = 21, MAGE = 21, WARLOCK = 21 }
 local BLOODRAGE_ID = 1267
 
--- Version 33 changes Warrior training prices. Freeze the old families and their
--- costs here; a later class/profile must never become eligible for this refund.
--- Entries are { base ID, old quality, old first shop round }.
+
+
+
 local WARRIOR_TRAINING_V32 = {
   heroic_strike = { 1200, 1, 1 }, rend = { 1201, 1, 1 }, overpower = { 1203, 2, 2 },
   mortal_strike = { 1204, 3, 3 }, execute = { 1205, 3, 4 }, bloodthirst = { 1208, 3, 3 },
@@ -24,7 +24,189 @@ local WARRIOR_TRAINING_V32 = {
   hamstring = { 1900, 1, 1 }, demoralizing_shout = { 1905, 1, 1 },
   pummel = { 1907, 4, 7 }, thunder_clap = { 1909, 2, 2 },
 }
-local WARRIOR_LEGACY_CREDIT = { [2] = 4, [3] = 11 }
+
+
+local CLASS_TRAINING_V33 = {
+  PALADIN = {
+    blessing_of_kings = { 5030, 3, 5 },
+    blessing_of_might = { 5064, 1, 1 },
+    consecration = { 5004, 2, 2 },
+    flash_of_light = { 5003, 1, 1 },
+    hammer_of_wrath = { 5063, 3, 5 },
+    holy_light = { 5002, 1, 1 },
+    holy_shield = { 5020, 3, 3 },
+    holy_shock = { 5005, 3, 3 },
+    judgement = { 5001, 1, 1 },
+  },
+  HUNTER = {
+    aimed_shot = { 1400, 3, 4 },
+    arcane_shot = { 1402, 1, 1 },
+    bestial_wrath = { 1413, 5, 9 },
+    bite = { 1426, 1, 1 },
+    claw_pet = { 1427, 1, 1 },
+    concussive_shot = { 1404, 2, 3 },
+    counterattack = { 1432, 3, 5 },
+    frost_trap = { 2007, 3, 4 },
+    intimidation = { 1414, 3, 4 },
+    mend_pet = { 2009, 1, 1 },
+    mongoose_bite = { 1430, 2, 3 },
+    multi_shot = { 1401, 2, 2 },
+    rapid_fire = { 1406, 4, 7 },
+    raptor_strike = { 1429, 1, 1 },
+    scatter_shot = { 1405, 3, 5 },
+    screech = { 1428, 2, 3 },
+    serpent_sting = { 1403, 1, 1 },
+    volley = { 1409, 2, 4 },
+    wing_clip = { 1431, 1, 1 },
+    wyvern_sting = { 1440, 5, 10 },
+  },
+  ROGUE = {
+    ambush = { 4029, 2, 2 },
+    backstab = { 4017, 2, 2 },
+    blade_flurry = { 4020, 4, 7 },
+    blind = { 4044, 3, 4 },
+    cheap_shot = { 4031, 2, 3 },
+    eviscerate = { 4001, 1, 1 },
+    expose_armor = { 4045, 2, 2 },
+    feint = { 4061, 1, 1 },
+    garrote = { 4030, 1, 1 },
+    ghostly_strike = { 4033, 2, 2 },
+    gouge = { 4018, 1, 1 },
+    hemorrhage = { 4032, 1, 1 },
+    instant_poison = { 4005, 1, 1 },
+    kick = { 4043, 2, 2 },
+    kidney_shot = { 4004, 2, 3 },
+    riposte = { 4019, 2, 3 },
+    rupture = { 4002, 1, 1 },
+    sinister_strike = { 4000, 1, 1 },
+    slice_and_dice = { 4003, 2, 2 },
+    sprint = { 4042, 1, 1 },
+    vanish = { 4034, 3, 4 },
+  },
+  PRIEST = {
+    abolish_disease = { 6039, 2, 2 },
+    devouring_plague = { 6047, 3, 5 },
+    dispel_magic = { 6038, 2, 2 },
+    elunes_grace = { 6060, 2, 2 },
+    flash_heal = { 6016, 2, 3 },
+    greater_heal = { 6017, 3, 4 },
+    heal_priest = { 6015, 2, 2 },
+    holy_fire = { 6018, 1, 1 },
+    holy_nova = { 6019, 3, 4 },
+    lesser_heal = { 6013, 1, 1 },
+    lightwell = { 6025, 5, 9 },
+    mind_blast = { 6027, 1, 1 },
+    mind_flay = { 6028, 2, 2 },
+    power_infusion = { 6009, 5, 9 },
+    power_word_shield = { 6001, 1, 1 },
+    prayer_of_healing = { 6020, 4, 7 },
+    psychic_scream = { 6037, 2, 2 },
+    renew = { 6014, 1, 1 },
+    shackle_undead = { 6041, 2, 3 },
+    shadow_word_pain = { 6026, 1, 1 },
+    silence = { 6036, 3, 4 },
+    smite = { 6000, 1, 1 },
+  },
+  SHAMAN = {
+    chain_heal = { 7042, 3, 3 },
+    chain_lightning = { 7004, 3, 3 },
+    earth_shock = { 7001, 1, 1 },
+    fire_nova_totem = { 7062, 3, 4 },
+    flame_shock = { 7002, 1, 1 },
+    frost_shock = { 7003, 2, 2 },
+    healing_stream_totem = { 7070, 1, 1 },
+    healing_wave = { 7040, 1, 1 },
+    lesser_healing_wave = { 7041, 1, 1 },
+    lightning_bolt = { 7000, 1, 1 },
+    lightning_shield = { 7025, 1, 1 },
+    magma_totem = { 7061, 2, 3 },
+    searing_totem = { 7060, 1, 1 },
+    stoneclaw_totem = { 7066, 2, 3 },
+    stormstrike = { 7024, 3, 3 },
+    strength_of_earth_totem_active = { 7160, 1, 1 },
+  },
+  MAGE = {
+    arcane_explosion = { 8002, 1, 1 },
+    arcane_missiles = { 8001, 1, 1 },
+    arcane_power = { 8013, 5, 10 },
+    blast_wave = { 8026, 3, 4 },
+    blink = { 8061, 2, 2 },
+    blizzard = { 8043, 2, 2 },
+    cold_snap = { 8051, 5, 10 },
+    combustion = { 8031, 5, 10 },
+    cone_of_cold = { 8042, 2, 2 },
+    counterspell = { 8007, 2, 2 },
+    dampen_magic = { 8071, 2, 2 },
+    fire_blast = { 8021, 1, 1 },
+    fireball = { 8020, 1, 1 },
+    flamestrike = { 8025, 2, 2 },
+    frost_nova = { 8041, 1, 1 },
+    frostbolt = { 8040, 1, 1 },
+    ice_barrier = { 8049, 3, 4 },
+    ice_block = { 8050, 4, 7 },
+    ignite = { 8023, 2, 2 },
+    mana_shield = { 8060, 1, 1 },
+    presence_of_mind = { 8012, 5, 10 },
+    pyroblast = { 8024, 3, 4 },
+    remove_lesser_curse = { 8065, 1, 1 },
+    scorch = { 8022, 1, 1 },
+  },
+  WARLOCK = {
+    amplify_curse = { 9010, 3, 4 },
+    conflagrate = { 9044, 3, 4 },
+    corruption = { 9001, 1, 1 },
+    curse_of_agony = { 9002, 1, 1 },
+    curse_of_exhaustion = { 9014, 3, 4 },
+    curse_of_tongues = { 9071, 2, 2 },
+    death_coil = { 9064, 3, 4 },
+    drain_life = { 9003, 1, 1 },
+    drain_mana = { 9006, 2, 2 },
+    drain_soul = { 9005, 2, 2 },
+    fear = { 9063, 2, 2 },
+    fel_domination = { 9035, 4, 7 },
+    healthstone = { 9070, 2, 2 },
+    hellfire = { 9046, 2, 2 },
+    immolate = { 9041, 1, 1 },
+    rain_of_fire = { 9045, 2, 2 },
+    searing_pain = { 9042, 1, 1 },
+    shadow_bolt = { 9040, 1, 1 },
+    shadowburn = { 9043, 3, 4 },
+    siphon_life = { 9004, 2, 2 },
+    soul_fire = { 9052, 5, 10 },
+    soul_link = { 9031, 5, 10 },
+  },
+  DRUID = {
+    abolish_poison = { 2114, 1, 1 },
+    barkskin = { 1032, 2, 3 },
+    bash = { 2122, 3, 4 },
+    claw = { 1012, 1, 1 },
+    demoralizing_roar = { 1023, 1, 1 },
+    entangling_roots = { 1008, 1, 1 },
+    faerie_fire = { 1007, 1, 1 },
+    ferocious_bite = { 1016, 3, 5 },
+    frenzied_regeneration = { 1022, 3, 5 },
+    healing_touch = { 1028, 1, 1 },
+    hurricane = { 1004, 4, 7 },
+    insect_swarm = { 1003, 2, 2 },
+    maul = { 1019, 1, 1 },
+    moonfire = { 1002, 1, 1 },
+    rake = { 1013, 2, 2 },
+    ravage = { 1046, 3, 5 },
+    regrowth = { 1027, 2, 2 },
+    rejuvenation = { 1026, 1, 1 },
+    rip = { 1015, 2, 3 },
+    shred = { 1014, 3, 4 },
+    starfire = { 1001, 2, 2 },
+    swiftmend = { 1029, 3, 4 },
+    swipe = { 1020, 2, 3 },
+    thorns = { 1033, 1, 1 },
+    tigers_fury = { 1017, 2, 3 },
+    tranquility = { 1031, 4, 7 },
+    wrath = { 1000, 1, 1 },
+  },
+}
+
+local LEGACY_TRAINING_CREDIT = { [2] = 4, [3] = 11 }
 
 local LEGACY_QUIVERS = {
   [20] = { shape = { "1111" }, quality = 1, minRound = 1, cost = 4, replacement = "woolen_bag" },
@@ -60,8 +242,11 @@ local function coordinates(x, y, rot)
     and type(rot) == "number" and rot == math.floor(rot) and rot >= 0 and rot <= 3
 end
 
-local function migrateWarriorTraining(data, version, info)
-  if data.class ~= "WARRIOR" or version >= 33 then return data, info end
+local function migrateLegacyTraining(data, version, info)
+  local historical
+  if data.class == "WARRIOR" and version < 33 then historical = WARRIOR_TRAINING_V32
+  elseif data.class ~= "WARRIOR" and version < 34 then historical = CLASS_TRAINING_V33[data.class] end
+  if not historical then return data, info end
   local function integer(value, low, high)
     return type(value) == "number" and value == value and value < math.huge
       and value == math.floor(value) and value >= low and (not high or value <= high)
@@ -72,23 +257,23 @@ local function migrateWarriorTraining(data, version, info)
     or data.trainingResale ~= nil and type(data.trainingResale) ~= "table" then return nil end
   local learned, owned = {}, {}
   local function historicalRank(key, rank)
-    local old = WARRIOR_TRAINING_V32[key]
+    local old = historical[key]
     local unlock = rank == 3 and 7 or rank == 2 and 4 or 1
     return old and integer(rank, 1, 3) and data.round >= math.max(old[3], unlock)
   end
   for key, rank in pairs(data.learnedRanks or {}) do
-    if WARRIOR_TRAINING_V32[key] then
+    if historical[key] then
       if not historicalRank(key, rank) then return nil end
       learned[key] = rank
     elseif ns.ItemsByKey[key] and rank ~= 1 then
-      -- These support/new families could not have been trained before version 33.
+
       return nil
     end
   end
   local function own(id)
     local def = ns.Items[id]
     local key = def and (def.baseKey or def.key)
-    local old = key and WARRIOR_TRAINING_V32[key]
+    local old = key and historical[key]
     if old then
       local base = ns.ItemsByKey[key]
       local rank = def.rank or 1
@@ -102,17 +287,17 @@ local function migrateWarriorTraining(data, version, info)
   local credits = {}
   if data.trainingResale then
     for key, value in pairs(data.trainingResale) do
-      local old, rank = WARRIOR_TRAINING_V32[key], learned[key]
+      local old, rank = historical[key], learned[key]
       if not old or not rank or rank < 2 or not integer(value, 0) then return nil end
       local paid = rank == 2 and old[2] + 1 or old[2] * 3 + 2
-      if value > math.max(paid, WARRIOR_LEGACY_CREDIT[rank]) or value > 0 and not owned[key] then return nil end
+      if value > math.max(paid, LEGACY_TRAINING_CREDIT[rank]) or value > 0 and not owned[key] then return nil end
       credits[key] = value
     end
   else
-    -- Old saves lacking this field used the fixed 4/11 inference. Learned ranks
-    -- survive a sale; ownership is essential or a sold family invents a refund.
+
+
     for key in pairs(owned) do
-      if learned[key] >= 2 then credits[key] = WARRIOR_LEGACY_CREDIT[learned[key]] end
+      if learned[key] >= 2 then credits[key] = LEGACY_TRAINING_CREDIT[learned[key]] end
     end
   end
   local refund, changed = 0, data.trainingResale == nil and next(credits) ~= nil
@@ -128,6 +313,96 @@ local function migrateWarriorTraining(data, version, info)
   local candidate = Util.ShallowCopy(data)
   candidate.trainingResale, candidate.gold = credits, data.gold + refund
   if changed then
+    info = info or { quivers = 0, ammo = 0, removed = 0, refunded = 0 }
+    info.changed, info.trainingAdjusted, info.trainingRefunded = true, true, refund
+  end
+  return candidate, info
+end
+
+
+
+local TRAINING_V34 = {
+  blood_frenzy = { 1047, 7, 5, 14 }, demonic_sacrifice = { 9032, 7, 5, 14 },
+  improved_enrage = { 3281, 2, 3, 8 }, improved_fire_totems = { 7082, 3, 3, 8 },
+  improved_shred = { 3282, 3, 3, 8 }, improved_thorns = { 3284, 3, 3, 8 },
+  precision_paladin = { 5032, 4, 4, 11 }, reflection = { 2108, 4, 4, 11 },
+  savage_fury = { 1036, 7, 5, 14 }, soul_fire = { 9052, 10, 6, 17 },
+  one_handed_weapon_specialization_paladin = { 5035, 9, 6, 17 }, frost_warding = { 8055, 7, 5, 14 },
+  adrenaline_rush = { 4021, 9, 6, 17 },
+  improved_healing_touch = { 2111, 4, 4, 11 }, prowl_pet = { 3087, 2, 3, 8 },
+}
+
+local TRAINING_V35 = {
+  one_handed_weapon_specialization_paladin = { 5035, 9, 6, 17 }, frost_warding = { 8055, 7, 5, 14 },
+  adrenaline_rush = { 4021, 9, 6, 17 },
+  improved_healing_touch = { 2111, 4, 4, 11 }, prowl_pet = { 3087, 2, 3, 8 },
+}
+
+local TRAINING_V36 = {
+  improved_healing_touch = { 2111, 4, 4, 11 }, prowl_pet = { 3087, 2, 3, 8 },
+}
+
+
+
+local NEW_V37_RANKS = { [12101] = true, [22101] = true, [18053] = true, [28053] = true }
+local function validPreV37Ranks(data)
+  if type(data.i) ~= "table" or data.stash ~= nil and type(data.stash) ~= "table"
+    or data.learnedRanks ~= nil and type(data.learnedRanks) ~= "table"
+    or data.trainingResale ~= nil and type(data.trainingResale) ~= "table" then return false end
+  for _, key in ipairs({ "improved_moonfire", "improved_frostbolt" }) do
+    local rank = data.learnedRanks and data.learnedRanks[key]
+    if rank ~= nil and (type(rank) ~= "number" or rank ~= 1) then return false end
+    local credit = data.trainingResale and data.trainingResale[key]
+    if credit ~= nil and credit ~= 0 then return false end
+  end
+  for index = 1, #(data.i or {}), 4 do if NEW_V37_RANKS[data.i[index]] then return false end end
+  for _, id in ipairs(data.stash or {}) do if NEW_V37_RANKS[id] then return false end end
+  return true
+end
+
+local function migrateProfileTraining(data, info, historical)
+  local function integer(value, low)
+    return type(value) == "number" and value == value and value < math.huge and value == math.floor(value) and value >= low
+  end
+  if not integer(data.round, 1) or data.round > Economy.ROUNDS + 1 or not integer(data.gold, 0)
+    or not dense(data.i, 4) or data.stash ~= nil and not dense(data.stash, 1)
+    or data.learnedRanks ~= nil and type(data.learnedRanks) ~= "table"
+    or data.trainingResale ~= nil and type(data.trainingResale) ~= "table" then return nil end
+  local owned, learned = {}, {}
+  for key, rank in pairs(data.learnedRanks or {}) do learned[key] = rank end
+  local function own(id)
+    local def = ns.Items[id]
+    if not def then return false end
+    local key = def.baseKey or def.key
+    owned[key] = true
+    local rank = def.rank or 1
+    if integer(learned[key] or 1, 1) then learned[key] = math.max(learned[key] or 1, rank) end
+    return true
+  end
+  for index = 1, #data.i, 4 do if not own(data.i[index]) then return nil end end
+  for _, id in ipairs(data.stash or {}) do if not own(id) then return nil end end
+  local credits, refund = {}, 0
+  for key, value in pairs(data.trainingResale or {}) do
+    local base, rank = ns.ItemsByKey[key], learned[key]
+    if not base or not base.rankable or not ns.ItemAllowedForClass(base, data.class) or not integer(rank, 2)
+      or not integer(value, 0) or value > 0 and not owned[key] then return nil end
+    local def = ns.Ranks.Definition(base, rank)
+    local investment, legacy = ns.Ranks.Investment(base, rank), ns.Ranks.LegacyTrainingCost(base, rank)
+    if not def or not investment or not legacy then return nil end
+    local cap = math.max(investment - base.cost, legacy)
+    local old = historical[key]
+    local oldCap = cap
+    if old then
+      if base.id ~= old[1] or rank > 3 or data.round < math.max(old[2], rank == 2 and 4 or 7) then return nil end
+      oldCap = math.max(old[rank + 1], legacy)
+    elseif def.minRound > data.round then return nil end
+    if value > oldCap then return nil end
+    credits[key] = math.min(value, cap)
+    refund = refund + value - credits[key]
+  end
+  local candidate = Util.ShallowCopy(data)
+  candidate.trainingResale, candidate.gold = credits, data.gold + refund
+  if refund > 0 then
     info = info or { quivers = 0, ammo = 0, removed = 0, refunded = 0 }
     info.changed, info.trainingAdjusted, info.trainingRefunded = true, true, refund
   end
@@ -352,20 +627,88 @@ local function migrateInventory(data, repairDuplicates)
   return candidate, info
 end
 
+
+
+
+
+local DRAFT_SHAPE_OFFSETS = {
+  improved_enrage = { [3] = { { 1, 0 }, { 0, 1 }, { 1, 1 } } },
+  improved_thorns = { [3] = { { 2, 0 }, { 0, 1 }, { 1, 1 }, { 2, 1 } } },
+  druid_ferocity = { [1] = { { 1, 0 }, { 1, 1 } }, [2] = { { 0, 1 }, { 1, 1 } } },
+}
+
+local function migrateDraftShapes(data, info)
+  if data.class ~= "DRUID" or ns.Grid.Deserialize(data.g, data.i, data.class, data.home) then return data, info end
+  if not dense(data.i, 4) then return nil end
+  local candidate, choices = Util.ShallowCopy(data), {}
+  candidate.i = Util.DeepCopy(data.i)
+  for index = 1, #data.i, 4 do
+    local def = ns.Items[data.i[index]]
+    local rotations = def and DRAFT_SHAPE_OFFSETS[def.baseKey or def.key]
+    local offsets = rotations and rotations[data.i[index + 3]]
+    if offsets then choices[#choices + 1] = { index = index, offsets = offsets } end
+  end
+  if #choices == 0 then return nil end
+  local attempts = 0
+  local function fit(index)
+    if attempts >= 256 then return false end
+    if index > #choices then
+      attempts = attempts + 1
+      return ns.Grid.Deserialize(candidate.g, candidate.i, candidate.class, candidate.home) ~= nil
+    end
+    local choice = choices[index]
+    local x, y = data.i[choice.index + 1], data.i[choice.index + 2]
+    if type(x) ~= "number" or type(y) ~= "number" then return false end
+
+    for option = 0, #choice.offsets do
+      local offset = option > 0 and choice.offsets[option]
+      candidate.i[choice.index + 1] = x + (offset and offset[1] or 0)
+      candidate.i[choice.index + 2] = y + (offset and offset[2] or 0)
+      if fit(index + 1) then return true end
+    end
+    return false
+  end
+  if not fit(1) then return nil end
+  info = info or { quivers = 0, ammo = 0, removed = 0, refunded = 0 }
+  info.changed, info.shapeAdjusted = true, true
+  return candidate, info
+end
+
 function Migrations.Upgrade(data)
   local context = { inferCompanions = data.class == "PALADIN" and data.dataVersion == 21 }
   if data.dataVersion == ns.DATA_VERSION then return data, context end
   if not supportedLegacy(data) then return nil end
   local version = data.dataVersion
+  if version < 37 and not validPreV37Ranks(data) then return nil end
   if needsInventoryMigration(data) then
     local candidate, info = migrateInventory(data)
     if not candidate then return nil end
     context.inferCompanions, context.info = false, info
     data = candidate
   end
-  local candidate, info = migrateWarriorTraining(data, version, context.info)
+  local candidate, info = migrateLegacyTraining(data, version, context.info)
   if not candidate then return nil end
   data, context.info = candidate, info
+  if version == 34 then
+    candidate, info = migrateProfileTraining(data, context.info, TRAINING_V34)
+    if not candidate then return nil end
+    data, context.info = candidate, info
+  end
+  if version == 35 then
+    candidate, info = migrateProfileTraining(data, context.info, TRAINING_V35)
+    if not candidate then return nil end
+    data, context.info = candidate, info
+  end
+  if version == 36 then
+    candidate, info = migrateProfileTraining(data, context.info, TRAINING_V36)
+    if not candidate then return nil end
+    data, context.info = candidate, info
+  end
+  if version >= 34 and version < 36 then
+    candidate, info = migrateDraftShapes(data, context.info)
+    if not candidate then return nil end
+    data, context.info = candidate, info
+  end
   data = Util.ShallowCopy(data)
   data.dataVersion = ns.DATA_VERSION
   return data, context
@@ -432,7 +775,7 @@ local function recoverDuplicates(data)
   if type(data) ~= "table" or data.dataVersion ~= 16 then return nil end
   local candidate, info = migrateInventory(data, true)
   if not candidate or info.removed == 0 then return nil end
-  candidate, info = migrateWarriorTraining(candidate, data.dataVersion, info)
+  candidate, info = migrateLegacyTraining(candidate, data.dataVersion, info)
   if not candidate then return nil end
   local ok, restored = pcall(Run.Restore, candidate)
   if ok and restored then return restored, info.removed, info end
@@ -458,11 +801,13 @@ function Migrations.LoadSaved(saved)
     out.messages[1] = string.format(L["Your saved run could not be loaded and was kept unchanged, with a backup: %s"], tostring(run))
     return out
   end
-  if run and migration and migration.changed and (legacy or migration.trainingAdjusted) then
+  if run and migration and migration.changed and (legacy or migration.trainingAdjusted or migration.shapeAdjusted) then
     out.backups[1] = { reason = "migration", run = original }
     out.save = run:Serialize()
     if migration.quivers > 0 or migration.ammo > 0 then
       out.messages[1] = L[migration.quivers > 0 and "Quivers replaced with bags. Original save backed up." or "Extra ammo stored or refunded. Original save backed up."]
+    elseif migration.shapeAdjusted then
+      out.messages[1] = L["Ability shapes updated. Original save backed up."]
     else
       out.messages[1] = L["Ability training updated. Original save backed up."]
     end

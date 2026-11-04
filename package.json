@@ -2,6 +2,7 @@
   "name": "bagnon-battles",
   "private": true,
   "scripts": {
+    "check": "python3 -B _dev/tools/build.py --check",
     "dev": "python3 -B _dev/tools/build.py --dev",
     "dev:forever": "python3 -B _dev/tools/build.py --dev forever",
     "build": "python3 -B _dev/tools/build.py"

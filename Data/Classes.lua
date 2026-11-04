@@ -8,7 +8,7 @@ ns.RegisterClass{
   primary = "rage", resources = { rage = { max = 100, start = 0, regen = 0 } }, baseArmor = 14, baseAP = 35, dualWield = true,
   specs = { { tag = "arms", name = "Arms", signature = "mortal_strike" }, { tag = "fury", name = "Fury", signature = "bloodthirst" }, { tag = "prot", name = "Protection", signature = "shield_slam" } },
   starter = { { key = "worn_axe", x = startX, y = startY, rot = 0 }, { key = "heroic_strike", x = startX + 1, y = startY, rot = 0 } },
-  blurb = "Warriors fight in melee with swords, axes and maces, or with a sword and shield. They gain rage from dealing and taking damage, which they spend on their abilities.",
+  blurb = "Warriors fight with melee weapons and can wield a shield. They gain rage from dealing and taking damage, which they spend on their abilities.",
 }
 
 ns.RegisterClass{
@@ -17,7 +17,7 @@ ns.RegisterClass{
   primary = "mana", resources = { mana = { max = 120, regen = 5, rankCostCap = 80 } }, baseArmor = 20, baseAP = 10,
   specs = { { tag = "holy", name = "Holy", signature = "holy_shock" }, { tag = "protection", name = "Protection", signature = "holy_shield" }, { tag = "retribution", name = "Retribution", signature = "repentance" } },
   starter = { { key = "worn_mace", x = startX, y = startY, rot = 0 }, { key = "seal_of_righteousness", x = startX + 1, y = startY, rot = 0 } },
-  blurb = "Paladins fight with swords, axes and maces, or with a weapon and shield. They use seals, blessings and auras to support their attacks, and can heal themselves with Holy magic.",
+  blurb = "Paladins fight with melee weapons and can wield a shield. They use seals, blessings and auras to support their attacks, and can heal themselves with Holy magic.",
 }
 
 ns.RegisterClass{
@@ -42,7 +42,7 @@ ns.RegisterClass{
   key = "PRIEST", id = 5, order = 5, name = "Priest", armor = "cloth", playable = true,
   color = { r = 1.00, g = 1.00, b = 1.00 }, icon = I("ClassIcon_Priest"),
   primary = "mana", resources = { mana = { max = 135, regen = 6, rankCostCap = 90 } }, baseArmor = 2,
-  specs = { { tag = "discipline", name = "Discipline", signature = "power_infusion" }, { tag = "holy", name = "Holy", signature = "holy_nova" }, { tag = "shadow", name = "Shadow", signature = "shadowform" } },
+  specs = { { tag = "discipline", name = "Discipline", signature = "power_word_shield" }, { tag = "holy", name = "Holy", signature = "holy_nova" }, { tag = "shadow", name = "Shadow", signature = "shadow_word_pain" } },
   starter = { { key = "acolytes_staff", x = startX, y = startY, rot = 0 }, { key = "smite", x = startX + 1, y = startY, rot = 0 } },
   blurb = "Priests use Holy magic to heal and shield themselves, or Shadow magic to wear down their opponent. They can drain health and mana, and use wands between spells.",
 }
@@ -51,7 +51,7 @@ ns.RegisterClass{
   key = "SHAMAN", id = 7, order = 6, name = "Shaman", armor = "mail", playable = true,
   color = { r = 0.00, g = 0.44, b = 0.87 }, icon = I("ClassIcon_Shaman"),
   primary = "mana", resources = { mana = { max = 120, regen = 5, rankCostCap = 80 } }, baseArmor = 12, baseAP = 10,
-  specs = { { tag = "elemental", name = "Elemental", signature = "elemental_mastery" }, { tag = "enhancement", name = "Enhancement", signature = "stormstrike" }, { tag = "restoration", name = "Restoration", signature = "mana_tide_totem" } },
+  specs = { { tag = "elemental", name = "Elemental", signature = "lightning_bolt" }, { tag = "enhancement", name = "Enhancement", signature = "stormstrike" }, { tag = "restoration", name = "Restoration", signature = "healing_wave" } },
   starter = { { key = "worn_dagger", x = startX, y = startY, rot = 0 }, { key = "lightning_bolt", x = startX + 1, y = startY, rot = 0 } },
   blurb = "Shamans fight with elemental spells, weapon enchantments and totems. They can focus on lightning and shocks, melee attacks with Windfury, or healing.",
 }

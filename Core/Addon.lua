@@ -156,6 +156,7 @@ function Addon:NewRun(classKey)
   if ns.UI.Dialogs then ns.UI.Dialogs.HideSurvival() end
   local seed = Util.Hash32(ns.PlayerName() .. tostring(Util.Now()) .. tostring(GetTime and GetTime() or 0))
   local replacement = ns.Run.New(classKey, seed, ns.PlayerName())
+  replacement.firstRun = self.db.global.stats.runs == 0
   recordRunEnd(ns.run, self.db.global.stats)
   ns.run = replacement
   self.db.global.settings.lastClass = classKey

@@ -4,6 +4,8 @@ local Util = ns.Util
 local Bots = {}
 ns.Bots = Bots
 
+Bots.FIRST_RUN_BUDGET_SCALE = 0.75
+
 Bots.NAMES = {
   "Aiden Vale", "Alva Reed", "Arlen Moss", "Astrid Holm", "Beric Hale", "Bran Harker",
   "Brenna Flint", "Bram Calder", "Carra Venn", "Cedric Holt", "Corin Ashby", "Dagna Stonehand",
@@ -301,7 +303,7 @@ local function flagsFor(grid)
   return flags
 end
 
-function Bots.Generate(classKey, round, seed, archetypeId)
+function Bots.Generate(classKey, round, seed, archetypeId, firstRun)
   local rng = Util.NewRNG(seed)
   local class = assert(ns.GetClass(classKey), "Unknown bot class.")
   local plans, availablePlans, allowed = {}, {}, {}
@@ -320,6 +322,10 @@ function Bots.Generate(classKey, round, seed, archetypeId)
   local payoff = ns.ItemsByKey[plan.payoff]
   local payoffRound = payoff.minRound + (payoff.quality >= 3 and planRng:Range(0, 2) or 0)
   local budget = math.floor(ns.Economy.CumulativeGold(round) * (0.77 + rng:Next() * 0.12 - 0.10 * math.max(0, 8 - round) / 7)) + ns.StarterValue(class)
+  if firstRun then
+    local starterValue = ns.StarterValue(class)
+    budget = starterValue + math.floor((budget - starterValue) * Bots.FIRST_RUN_BUDGET_SCALE)
+  end
   local gold, grid = budget, ns.Grid.New()
   local desiredRank = round >= 10 + rng:Range(0, 3) and rng:Chance(65) and 3 or round >= 4 + rng:Range(0, 3) and 2 or 1
   local trainingBase = ns.ItemsByKey[words(plan.train)[1]]
@@ -571,8 +577,8 @@ function Bots.Generate(classKey, round, seed, archetypeId)
   }, grid, { archetype = plan.id, budget = budget, spent = budget - gold, remaining = gold, trainingSpent = trainingSpent }
 end
 
-function Bots.Opponent(round, seed)
+function Bots.Opponent(round, seed, firstRun)
   local rng = Util.NewRNG(seed)
   local class = rng:Pick(ns.PlayableClasses())
-  return Bots.Generate(class.key, round, seed)
+  return Bots.Generate(class.key, round, seed, nil, firstRun)
 end

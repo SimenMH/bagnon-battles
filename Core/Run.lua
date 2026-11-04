@@ -622,6 +622,7 @@ function Run:Serialize()
     seed = self.seed, who = self.who, history = Util.DeepCopy(self.history), recent = Util.DeepCopy(self.recent),
     phase = self.phase, survival = self.survival == true, survivalLife = self.survivalLife == true,
     winCounted = self.winCounted == true,
+    firstRun = self.firstRun == true,
     shop = { offers = Util.DeepCopy(self.shop.offers), sales = Util.DeepCopy(self.shop.sales or {}), reserved = self.shop.reserved, reservedIndex = self.shop.reservedIndex, reservedSale = self.shop.reservedSale, rerolls = self.shop.rerolls },
     stash = Util.DeepCopy(self.stash or {}),
     learnedRanks = Util.DeepCopy(self.learnedRanks or {}),
@@ -648,6 +649,7 @@ function Run.Restore(data)
   if data.wins == nil or data.losses == nil then return nil end
   if data.winCounted ~= nil and type(data.winCounted) ~= "boolean" then return nil end
   if data.winCounted and data.wins < Economy.MAX_WINS then return nil end
+  if data.firstRun ~= nil and type(data.firstRun) ~= "boolean" then return nil end
   if data.survival ~= nil and type(data.survival) ~= "boolean" then return nil end
   if data.survivalLife ~= nil and type(data.survivalLife) ~= "boolean" then return nil end
   local survival, survivalLife = data.survival == true, data.survivalLife == true
@@ -684,6 +686,7 @@ function Run.Restore(data)
   run.wins = data.wins
   run.losses = data.losses
   run.winCounted = data.winCounted == true
+  run.firstRun = data.firstRun == true
   run.survival = survival
   run.survivalLife = survivalLife
   run.gold = data.gold
@@ -819,23 +822,25 @@ end
 
 function ns.FindOpponent(run, myId)
   local now = Util.Now()
-  local exclude = Util.Set(run.recent)
-  local excludedAuthors = ns.Comm and ns.Comm.SelfNames(run.who) or { [run.who] = true }
-  local rec = ns.Pool.Pick(run.round, {
-    now = now, exclude = exclude, excludedAuthors = excludedAuthors, wins = run.wins,
-    rng = Util.NewRNG(Util.Hash32(myId .. tostring(now))),
-    isOnline = ns.Comm and ns.Comm.IsOnline or nil,
-  })
-  if rec then
-    local ok, err, grid = ns.Snapshot.Validate(rec.b, now)
-    if ok then
-      local classDef = ns.ClassesById[rec.b.c]
-      return { id = rec.id, build = rec.b, grid = grid, classKey = classDef.key }
+  if not run.firstRun then
+    local exclude = Util.Set(run.recent)
+    local excludedAuthors = ns.Comm and ns.Comm.SelfNames(run.who) or { [run.who] = true }
+    local rec = ns.Pool.Pick(run.round, {
+      now = now, exclude = exclude, excludedAuthors = excludedAuthors, wins = run.wins,
+      rng = Util.NewRNG(Util.Hash32(myId .. tostring(now))),
+      isOnline = ns.Comm and ns.Comm.IsOnline or nil,
+    })
+    if rec then
+      local ok, err, grid = ns.Snapshot.Validate(rec.b, now)
+      if ok then
+        local classDef = ns.ClassesById[rec.b.c]
+        return { id = rec.id, build = rec.b, grid = grid, classKey = classDef.key }
+      end
+      ns.Pool.Remove(run.round, rec.id)
     end
-    ns.Pool.Remove(run.round, rec.id)
   end
   local seed = Util.Hash32(myId .. ":bot:" .. tostring(now))
-  local build, grid = ns.Bots.Opponent(run.round, seed)
+  local build, grid = ns.Bots.Opponent(run.round, seed, run.firstRun)
   local classDef = ns.ClassesById[build.c]
   return { id = "bot:" .. ns.Snapshot.Hash(build), build = build, grid = grid, classKey = classDef.key }
 end

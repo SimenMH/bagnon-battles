@@ -260,20 +260,28 @@ function Inspector.Create(parent, anchor, onSelect)
     row.bonus:SetPoint("TOPLEFT", 42, -26)
     row.milestones = T.Text(row, 11, T.C.muted)
     row.milestones:SetPoint("TOPLEFT", 42, -48)
-    row:SetScript("OnEnter", function(self)
+    local function showTalentDetails(self)
       local context = view.context
+      if not context or not self.spec then return end
+      local details = IsShiftKeyDown and IsShiftKeyDown() or false
+      local hasDetails = false
+      ns.UI.Tooltip.Hide()
       GameTooltip:SetOwner(self, "ANCHOR_TOP")
       GameTooltip:ClearLines()
       GameTooltip:AddDoubleLine(self.name:GetText(), self.value:GetText(), 1, 0.82, 0, 1, 1, 1)
-      for _, line in ipairs(ns.Mastery.Lines(context.classKey, self.spec, self.points)) do
+      for _, line in ipairs(ns.Mastery.Lines(context.classKey, self.spec, self.points, details)) do
+        hasDetails = hasDetails or line.hasDetails
         local prefix = line.points > 0 and string.format(L["%d points: "], line.points) or ""
         local color = line.active and T.C.good or T.C.muted
         local r, g, b = T.RGB(color)
         GameTooltip:AddLine(prefix .. line.text, r, g, b, true)
       end
+      if not details and hasDetails then GameTooltip:AddLine(L["Hold Shift for more details"], 0.6, 0.6, 0.6, true) end
       GameTooltip:Show()
-    end)
-    row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+      ns.UI.Tooltip.TrackModifiers(self, function() showTalentDetails(self) end)
+    end
+    row:SetScript("OnEnter", showTalentDetails)
+    row:SetScript("OnLeave", function() ns.UI.Tooltip.Hide() end)
     view.talents[index] = row
   end
   function view:Open(sideId, battle, snapshot)

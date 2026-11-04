@@ -199,6 +199,7 @@ local function trackTooltip(owner, refresh)
   end
   Tooltip.current = { owner = owner, refresh = refresh }
 end
+Tooltip.TrackModifiers = trackTooltip
 
 local function tooltipContext(opts)
   local context = opts.context

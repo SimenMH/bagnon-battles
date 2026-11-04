@@ -106,7 +106,12 @@ local function spatialNoun(filter, area, plural)
 end
 Describe.SpatialNoun = spatialNoun
 
-local function effectNoun(effect, plural)
+local function effectNoun(effect, plural, owner)
+  if effect.target == "neighbors" and effect.match and effect.match.tag == "druid_hot" and owner then
+    local family = owner.baseKey or owner.key
+    if family == "regrowth" then return spatialNoun({ key = "rejuvenation" }, effect.area, plural) end
+    if family == "rejuvenation" then return spatialNoun({ key = "regrowth" }, effect.area, plural) end
+  end
   return effect.target == "neighbors" and spatialNoun(effect.match, effect.area, plural) or matchNoun(effect.match, plural)
 end
 
@@ -208,7 +213,7 @@ end
 
 local BANK_LABELS = {
   blocked = "damage blocked since its last use", flask = "bonus damage stored by Diamond Flask",
-  thorns = "stored damage from spell critical strikes", maul = "stored damage taken or prevented by Armor",
+  thorns = "stored damage", maul = "stored damage taken or prevented by Armor",
   wolf_howl = "stored Wolf damage", wind_serpent = "stored damage from Mana spent", lethal_shots = "stored damage from shot critical strikes",
   arcane_resonance = "stored Arcane Explosion damage", piercing_ice = "stored damage from Frost critical strikes",
   discipline_aegis = "bonus damage stored by Power Word: Shield", holy_grace = "bonus damage stored by Renew",
@@ -295,7 +300,8 @@ local function describeDamage(e, trigger, details)
   if e.multIf then out = out .. string.format(". Deals %s%% damage %s", fmtNumber(e.multIf.mult * 100), (conditionLabel(e.multIf.condition) or ""):gsub("^%u", string.lower)) end
   if e.perStatus then out = out .. string.format(", +%d%% per damage-over-time effect on the enemy", e.perStatus * 100) end
   if e.critBonus then out = out .. string.format(". Has an additional %d%% critical strike chance", e.critBonus) end
-  if e.critIf and conditionLabel(e.critIf) then out = out .. ". Always critically strikes " .. conditionLabel(e.critIf):gsub("^%u", string.lower) end
+  if e.critIf == "enemyStunned" then out = out .. ". Guaranteed critical strike against crowd-controlled targets"
+  elseif e.critIf and conditionLabel(e.critIf) then out = out .. ". Always critically strikes " .. conditionLabel(e.critIf):gsub("^%u", string.lower) end
   if e.generatesRage then out = out .. ". Generates Rage" end
   if e.noCrit then out = out .. ". Cannot critically strike" end
   if e.consumeDots and e.perCombo then out = out .. string.format(", +%d%% per combo point spent", e.perCombo * 100) end
@@ -444,7 +450,7 @@ local function describeEffect(e, trigger, details, context, owner)
       local duration = durationText(e)
       if e.charges then
         noun = "Your next " .. (e.charges == 1 and noun or e.charges .. " " .. effectNoun(e, true))
-        if e.paidOnly then noun = noun .. consumptionText(owner, e.match, e.charges ~= 1) end
+        if details ~= false and e.paidOnly then noun = noun .. consumptionText(owner, e.match, e.charges ~= 1) end
         if e.duration and e.duration < ns.Sim.MAX_TIME then noun = noun .. " within " .. fmtNumber(e.duration) .. " sec" end
         duration = ""
       else noun = noun:gsub("^%l", string.upper) end
@@ -485,7 +491,7 @@ local function describeEffect(e, trigger, details, context, owner)
           local name = named and named.name:gsub("^Pet: *", "") or "pet"
           what = "Your " .. name .. "'s next " .. (e.charges == 1 and "attack" or e.charges .. " attacks")
         end
-        if e.paidOnly then what = what .. consumptionText(owner, e.match, e.charges ~= 1) end
+        if details ~= false and e.paidOnly then what = what .. consumptionText(owner, e.match, e.charges ~= 1) end
         if e.duration and e.duration < ns.Sim.MAX_TIME then what = what .. " within " .. fmtNumber(e.duration) .. " sec" end
         if e.stat == "crit" and e.value >= 100 then return what .. (e.charges > 1 and " are guaranteed critical strikes." or " is a guaranteed critical strike.") end
         duration = ""
@@ -515,6 +521,12 @@ local function describeEffect(e, trigger, details, context, owner)
     if e.stat == "none" then
       if e.double then
         return "Your " .. matchNoun(e.double, true) .. " activate twice" .. duration .. "."
+      end
+      if e.key == "druid_prowl" then
+        return "Gain Prowl" .. duration .. ". Enables Pounce and Ravage." .. (details ~= false and " Either attack ends Prowl." or "")
+      end
+      if e.key == "rogue_stealth" then
+        return "Enter Stealth" .. duration .. ". Enables Ambush, Garrote, Cheap Shot and Sap." .. (details ~= false and " Ambush, Garrote and Cheap Shot end Stealth." or "")
       end
       return (e.name or e.key or "Effect") .. " active" .. duration .. "."
     end
@@ -614,7 +626,7 @@ local function describeEffect(e, trigger, details, context, owner)
   elseif t == "tickHots" then
     if e.target == "neighbors" then
       if e.match and e.match.tag == "totem" then return "Trigger an extra healing tick from " .. effectNoun(e, true) .. "." end
-      return "Trigger an extra tick of " .. effectNoun(e, true) .. "."
+      return "Trigger an extra tick of " .. effectNoun(e, true, owner) .. "."
     end
     if e.match and e.match.key then return "Trigger a tick of " .. statusName(e.match.key) .. "." end
     if e.match and e.match.tag == "totem" then return "Trigger a tick of your healing totems." end
@@ -667,7 +679,7 @@ local function describeEffect(e, trigger, details, context, owner)
     end
     if details ~= false and e.key == "execute" then out = out .. ". Free Execute gains no damage from Rage spent" end
     if e.consumeCooldown then out = out .. " and begin its cooldown" end
-    if e.deferDuringChannel then out = out .. ". If unable to act, the spell activates when you recover" end
+    if details ~= false and e.deferDuringChannel then out = out .. ". If unable to act, the spell activates when you recover" end
     return out:gsub(" +", " ") .. "."
   elseif t == "resource" then
     if e.pctMax then return string.format("Restore %s%% of maximum %s.", fmtNumber(e.pctMax * 100), ns.RESOURCE_NAMES[e.resource] or e.resource) end
@@ -932,7 +944,7 @@ local CONDITION_LABELS = {
   enemyPoisoned = "If the enemy is poisoned",
   noAbsorb = "While you have no absorb shield",
   lowMana = "Below 30% mana",
-  enemyStunned = "While the enemy cannot act",
+  enemyStunned = "While the enemy is under crowd control",
   dualwield = "While dual wielding",
 }
 
@@ -1110,6 +1122,13 @@ local function highlightedSubject(filter)
   if filter.kind == "ammo" then return "Ammo" end
   if filter.kind == "armor" then return "Armor" end
   if filter.set or filter.slot then return filterLabel(filter) .. " items" end
+  if filter.anyWeaponType and filterLabel(filter) ~= "Ranged weapon" then
+    local parts = {}
+    for _, weaponType in ipairs(filter.anyWeaponType) do
+      parts[#parts + 1] = weaponType == "staff" and "staves" or (WEAPON_LABELS[weaponType] or weaponType):lower() .. "s"
+    end
+    return joinOr(parts):gsub("^%l", string.upper)
+  end
   if filter.weaponType or filter.anyWeaponType or filter.hands
     or filter.kind and filter.kind ~= "ability" and filter.kind ~= "pet" and filter.kind ~= "form" then
     return filterLabel(filter) .. "s"
@@ -1148,15 +1167,18 @@ local function modifierSentence(mods, subject, singular)
   return predicate and subject .. " " .. predicate .. "." or ""
 end
 
-local function adjacencySubject(rule)
+local function adjacencySubject(rule, owner)
   local filter = rule.match or {}
-  local singular = rule.once or filter.key ~= nil or filter.kind == "ammo" or filter.kind == "armor"
+  local singleSlot = owner and owner.cellCount == 1 and rule.side and not rule.corners and rule.once
+  local singular = rule.once and not singleSlot or filter.key ~= nil or filter.kind == "ammo" or filter.kind == "armor"
   local noun = singular and filterLabel(filter):gsub(" item$", " ability") or highlightedSubject(filter)
   if filter.kind == "ammo" then noun = "ammunition"
   elseif filter.kind == "armor" then noun = "armor"
+  elseif not filter.key and (filter.kind == "weapon" or filter.weaponType or filter.anyWeaponType or filter.hands) then noun = noun:lower()
   elseif not filter.key and not SCHOOL_LABELS[filter.tag]
     and not (filter.tag and (filter.tag:match("^druid_") or filter.tag == "paladin_direct_heal" or filter.tag == "patient_heal" or filter.tag == "cold_blood_attack" or filter.tag == "primal_generator")) then noun = noun:gsub("^%u", string.lower) end
   if rule.inside then return noun:gsub("^%l", string.upper) .. " in this bag", singular end
+  if singleSlot then return noun .. " in the highlighted slot", singular end
   return (rule.once and "One " or "") .. spatialWord(rule) .. " " .. noun, singular
 end
 
@@ -1429,7 +1451,7 @@ local function triggerResourceText(def, filter, selfEvent)
 end
 
 local healingTriggerFilter = { healing = true }
-local function triggerNoun(def, trig, plural)
+local function triggerNoun(def, trig, plural, details)
   local filter = trig.match
   local selfEvent = trig.on == "use" or trig.on == "hit" or trig.on == "crit"
   if not filter and selfEvent then filter = { key = def.baseKey or def.key } end
@@ -1437,7 +1459,7 @@ local function triggerNoun(def, trig, plural)
   if ((trig.healing == true or trig.on == "healed" or trig.on == "hotTick")
       and (not selected.tag or selected.tag == "spell") and not selected.anyTag)
     or selected.healing == true and not selected.tag then selected.tag = "heal" end
-  if selected.tag == "heal" and trig.paidOnly and not trig.match and trig.healing then selected.tag = nil selected.healing = true end
+  if selected.tag == "heal" and trig.paidOnly and not trig.match and trig.healing and not selfEvent then selected.tag = nil selected.healing = true end
   if trig.healing == true and SCHOOL_LABELS[selected.tag] and not selected.anyTag then selected.anyTag = { "heal" } end
   local noun = matchNoun(selected, plural)
   if selected.healing and (not selected.tag or trig.match and not trig.match.tag) then noun = plural and "healing abilities" or "healing ability" end
@@ -1450,7 +1472,7 @@ local function triggerNoun(def, trig, plural)
   elseif selected.hands then noun = (selected.hands == 2 and "two-handed" or "one-handed") .. " weapon attack" .. (plural and "s" or "") end
   if trig.on == "adjacentUse" or trig.on == "adjacentHit" or trig.on == "adjacentCrit" then noun = "adjacent " .. noun end
   local namedList = not selected.key and noun:match("^%u") and noun:find(",", 1, true)
-  if trig.paidOnly then
+  if trig.paidOnly and details ~= false then
     if filter and filter.key or selfEvent or namedList then noun = (plural and "casts of " or "cast of ") .. noun
     elseif noun == "melee attacks" then noun = "melee abilities"
     elseif noun == "melee attack" then noun = "melee ability" end
@@ -1501,14 +1523,17 @@ end
 
 local function triggerIntro(def, trig, context, sharedShadow)
   local on = trig.on
-  local noun = triggerNoun(def, trig, false)
-  local many = triggerNoun(def, trig, true)
+  local details = not context or context.details ~= false
+  local paidOnly = trig.paidOnly and details
+  local noun = triggerNoun(def, trig, false, details)
+  local many = triggerNoun(def, trig, true, details)
   local named = trig.match and trig.match.key or on == "use" or on == "hit" or on == "crit"
-  local source = triggerArticle(noun, named and not trig.paidOnly)
+  local source = triggerArticle(noun, named and not paidOnly)
+  if not paidOnly and noun:match("^cast of ") then source = noun:gsub("^cast of ", "") end
   local namedSource = trig.match and trig.match.key and matchNoun(trig.match, false)
     or (on == "use" or on == "hit" or on == "crit") and def.name or nil
   if not namedSource and trig.match and noun:match("^cast of ") then namedSource = matchNoun(trig.match, false) end
-  local consumption = trig.paidOnly and namedSource and " consumes " .. triggerResourceText(def, trig.match, not trig.match) or nil
+  local consumption = paidOnly and namedSource and " consumes " .. triggerResourceText(def, trig.match, not trig.match) or nil
   local resourceEvent = on == "resourceSpent" or on == "resourceGained" or on == "resourceOverflow"
   if resourceEvent then
     local resource = trig.resource
@@ -1542,21 +1567,21 @@ local function triggerIntro(def, trig, context, sharedShadow)
       or filter.tag == "melee" and "melee" or filter.tag == "ranged" and "ranged"
       or filter.hands == 2 and "two-handed" or filter.hands == 1 and "one-handed"
       or filter.anyWeaponType and "ranged" or nil
-    local attack = "regular " .. (kind and kind .. " " or "") .. "auto-attack"
-    return trig.every and "After every " .. trig.every .. " " .. attack .. " hits" or "When a " .. attack .. " hits"
+    local attack = (kind and kind .. " " or "") .. "auto-attack"
+    return trig.every and "After every " .. trig.every .. " " .. attack .. " hits" or "When " .. triggerArticle(attack) .. " hits"
   end
   if trig.regularAttackOnly then
     local weapon = noun:gsub(" attacks?$", "")
     local sourceWeapon = triggerArticle(weapon, trig.match and trig.match.key)
-    return trig.every and "After every " .. trig.every .. " regular auto-attack hits from " .. sourceWeapon
-      or "When a regular auto-attack from " .. sourceWeapon .. " hits"
+    return trig.every and "After every " .. trig.every .. " auto-attack hits from " .. sourceWeapon
+      or "When an auto-attack from " .. sourceWeapon .. " hits"
   end
   if trig.every then
     local count = tostring(trig.every)
     if on == "dotTick" then return "After every " .. count .. " periodic damage ticks from " .. many end
-    if on == "hotTick" then return "After every " .. count .. (trig.effective and " effective" or "") .. " healing ticks" .. (trig.match and " from " .. many or "") end
+    if on == "hotTick" then return "After every " .. count .. " healing ticks" .. (trig.match and " from " .. many or "") end
     if on == "anyCrit" or on == "adjacentCrit" or on == "crit" then
-      return "After every " .. count .. (trig.effective and trig.healing and " effective" or "") .. " critical "
+      return "After every " .. count .. " critical "
         .. (trig.healing and "heals" or "strikes") .. " with " .. many
     end
     if on == "anyUse" or on == "adjacentUse" or on == "use" then return "After every " .. count .. " uses of " .. many:gsub("^casts of ", "") end
@@ -1571,27 +1596,23 @@ local function triggerIntro(def, trig, context, sharedShadow)
   end
   if on == "crit" or on == "anyCrit" or on == "adjacentCrit" then
     if consumption then
-      return "When " .. namedSource .. consumption .. " and " .. (trig.healing and (trig.effective and "provides effective critical healing" or "critically heals you") or "critically strikes")
+      return "When " .. namedSource .. consumption .. " and " .. (trig.healing and "critically heals you" or "critically strikes")
     end
-    if not trig.match and on == "anyCrit" and not trig.paidOnly then
-      if trig.healing then return trig.effective and "When a critical heal restores Health" or "When you critically heal" end
+    if not trig.match and on == "anyCrit" and not paidOnly then
+      if trig.healing then return "When you critically heal" end
       return "When you critically strike"
-    end
-    if trig.healing and trig.effective then
-      source = source:gsub("^a healing ability", "an ability"):gsub("^a healing spell", "a spell")
-      return "When " .. source .. " provides effective critical healing"
     end
     return "When " .. source .. (trig.healing and " critically heals you" or " critically strikes")
   end
   if on == "hit" or on == "anyHit" or on == "adjacentHit" or on == "extraHit" then
     if on == "extraHit" then return "When an extra attack hits" end
     if consumption then return "When " .. namedSource .. consumption .. " and " .. (trig.effective and "deals damage" or "hits") end
-    if not trig.match and on == "anyHit" and not trig.paidOnly then return trig.effective and "When you deal damage" or "When you hit an enemy" end
+    if not trig.match and on == "anyHit" and not paidOnly then return trig.effective and "When you deal damage" or "When you hit an enemy" end
     return "When " .. source .. (trig.effective and " deals damage" or " hits")
   end
   if on == "healed" then
     if consumption then return "When " .. namedSource .. consumption .. (trig.effective and " and restores Health" or " and heals you") end
-    if not trig.match and not trig.paidOnly then return "When you receive " .. (trig.effective and "effective healing" or "healing") end
+    if not trig.match and not paidOnly then return "When you receive healing" end
     return "When " .. source .. (trig.effective and " restores Health" or " heals you")
   end
   if on == "hotTick" then return "When a healing tick" .. ((trig.match or trig.paidOnly) and " from " .. source or "") .. (trig.effective and " restores Health" or " heals you") end
@@ -1607,7 +1628,7 @@ local function triggerIntro(def, trig, context, sharedShadow)
   if on == "healthSpent" then return "When you spend Health" .. (trig.match and " through " .. matchNoun(trig.match, false) or "") end
   if on == "dodged" then return "When you dodge an attack" end
   if on == "targetDodged" then return "When the enemy dodges" .. (trig.match and " " .. source or " an attack") end
-  if on == "enemyStunned" then return "When " .. (trig.match and matchNoun(trig.match, false) or "your crowd control") .. " prevents the enemy from acting" end
+  if on == "enemyStunned" then return trig.match and "When " .. source .. " applies crowd control" or "When you apply crowd control" end
   if on == "lowHealth" then return "The first time you fall below 35% Health" end
   if on == "below40" then return "When you fall below 40% Health" end
   if on == "stunned" then
@@ -1638,7 +1659,7 @@ local function triggerOutcome(text)
     Add = "add", Adds = "add", Absorb = "absorb", Absorbs = "absorb", Remove = "remove", Removes = "remove",
     Spend = "spend", Recover = "recover", Consume = "consume", Make = "make", Sacrifice = "sacrifice",
     Stuns = "stun", Freezes = "freeze", Fears = "fear", Charms = "charm", Puts = "put", Horrifies = "horrify", Incapacitates = "incapacitate",
-    Apply = "apply", Applies = "apply", Cause = "cause", Causes = "cause", Store = "store", Stores = "store", Take = "take", Steal = "steal", Drain = "drain", Prevent = "prevent", Refresh = "refresh",
+    Apply = "apply", Applies = "apply", Cause = "cause", Causes = "cause", Store = "store", Stores = "store", Take = "take", Steal = "steal", Drain = "drain", Prevent = "prevent", Refresh = "refresh", Enter = "enter",
     Consumes = "consume", Prevents = "prevent", Refund = "regain", Refunds = "regain", Repeat = "repeat", Repeats = "repeat", Refreshes = "refresh", Recover = "recover", Recovers = "recover", Drains = "drain", Steals = "steal" }
   local verb, tail = first:match("^(%a+)%s+(.*)$")
   local lookup = verb and verb:gsub("^%l", string.upper)
@@ -1742,7 +1763,10 @@ function Describe.Lines(def, context)
       local cfg = def.grants[res]
       capacities[#capacities + 1] = fmtNumber(cfg.max) .. " " .. (ns.RESOURCE_NAMES[res] or res)
     end
-    if #capacities > 0 then add(table.concat(capacities, ", "), white) end
+    if #capacities > 0 then
+      local text = #capacities == 1 and capacities[1] or table.concat(capacities, ", ", 1, #capacities - 1) .. " and " .. capacities[#capacities]
+      add("Grants " .. text .. ".", white)
+    end
     local showRegen = def.kind ~= "form" and def.kind ~= "pet"
     if showRegen then
       for _, res in ipairs(resources) do
@@ -1814,7 +1838,7 @@ function Describe.Lines(def, context)
     local costs = {}
     if use.resource and (use.spendAll or use.cost and use.cost > 0) then
       if use.spendAll then
-        costs[#costs + 1] = "Spends all " .. (ns.RESOURCE_NAMES[use.resource] or use.resource)
+        costs[#costs + 1] = "Consumes all " .. (ns.RESOURCE_NAMES[use.resource] or use.resource)
           .. ((use.cost or 0) > 0 and string.format(" (minimum %d)", use.cost) or "")
       elseif use.spendMax then
         costs[#costs + 1] = string.format("%d-%d %s", use.cost, use.spendMax, ns.RESOURCE_NAMES[use.resource] or use.resource)
@@ -1826,11 +1850,11 @@ function Describe.Lines(def, context)
       local cost = use.healthCost and fmtNumber(use.healthCost) or string.format("%s%% maximum", fmtNumber(use.healthCostPct * 100))
       costs[#costs + 1] = cost .. " Health"
     end
-    if use.comboCost then
-      costs[#costs + 1] = use.spendCombo and string.format("All Combo Points (minimum %d)", use.comboCost)
-        or string.format("%d Combo Points", use.comboCost)
-    end
     if #costs > 0 then add(table.concat(costs, ", "), white, "cost") end
+    if use.comboCost then
+      add(use.spendCombo and string.format("Consumes all Combo Points (minimum %d).", use.comboCost)
+        or string.format("Consumes %d Combo Points.", use.comboCost), white, "cost")
+    end
     if ward then
       add(string.format("Gain %s charges for %s sec.", fmtNumber(ward.charge.amount), fmtNumber(ward.buff.duration)), green, "effect")
     else
@@ -1851,7 +1875,9 @@ function Describe.Lines(def, context)
     if ward then useCondition = nil end
     if useCondition then
       useCondition = useCondition:gsub(", While ", " and while "):gsub(", Against ", " and against ")
-      if useCondition:match("^Below ") then useCondition = useCondition:gsub("^Below ", "Activates below ")
+      local requiredBuff = type(use.condition) == "string" and use.condition:match("^buff:(.+)$")
+      if requiredBuff then useCondition = "Requires " .. statusName(requiredBuff) .. " to be active"
+      elseif useCondition:match("^Below ") then useCondition = useCondition:gsub("^Below ", "Activates below ")
       elseif useCondition:match("^While ") then useCondition = useCondition:gsub("^While ", "Activates while ")
       elseif useCondition:match("^Against ") then useCondition = useCondition:gsub("^Against ", "Only usable against ") end
       add(useCondition .. ".", grey, "detail")
@@ -1917,23 +1943,30 @@ function Describe.Lines(def, context)
           text = "increases your melee critical strike chance by " .. fmtNumber(effect.value) .. "%"
         end
         if condition then text = condition:gsub("^%l", string.upper) .. ", " .. text end
+      elseif effect.type == "bank" and #trig.effects == 1 and #parts == 1 and trig.healing ~= true
+        and (trig.on == "crit" or trig.on == "anyCrit" or trig.on == "adjacentCrit")
+        and not (trig.chance or trig.every or trig.everyAmount) and (parts[1]:match("^you add ") or parts[1]:match("^you store ")) then
+        local outcome = parts[1]:gsub("^you add ", "store "):gsub("^you store ", "store ")
+          :gsub("of damage dealt", "of their damage"):gsub(" to your next ", " for your next ")
+        text = "Critical strikes with " .. triggerNoun(def, trig, true, details) .. " " .. outcome
+        if condition then text = condition:gsub("^%l", string.upper) .. ", " .. text:gsub("^%u", string.lower) end
       elseif trig.on == "healed" and trig.match and trig.match.key == (def.baseKey or def.key)
         and trig.effective and not (trig.paidOnly or trig.condition or trig.chance or trig.every or trig.everyAmount or trig.icd)
         and #trig.effects == 1 and effect.type == "tickHots" and effect.target == "neighbors" then
         local combined = false
         for index = #lines, 1, -1 do
           if lines[index].role == "effect" and lines[index].text:match("^Heals ") then
-            lines[index].text = lines[index].text:gsub("%.$", "") .. " and triggers an extra tick of " .. effectNoun(effect, true) .. "."
+            lines[index].text = lines[index].text:gsub("%.$", "") .. " and triggers an extra tick of " .. effectNoun(effect, true, def) .. "."
             combined = true
             break
           end
         end
-        if not combined then text = "Effective healing with this spell triggers an extra tick of " .. effectNoun(effect, true) end
+        if not combined then text = "Healing with this spell triggers an extra tick of " .. effectNoun(effect, true, def) end
       elseif #trig.effects == 1 and effect.type == "cast" and effect.target == "neighbors"
         and effect.match and effect.match.kind == "form" and effect.match.tag == "autoattack"
         and (trig.on == "anyCrit" or trig.on == "crit" or trig.on == "adjacentCrit")
         and trig.healing ~= true and not (trig.every or trig.everyAmount or trig.chance) then
-        text = "Critical strikes with " .. triggerNoun(def, trig, true) .. " trigger an extra attack from "
+        text = "Critical strikes with " .. triggerNoun(def, trig, true, details) .. " trigger an extra attack from "
           .. (effect.choose == "first" and "an adjacent form" or "each adjacent form")
         if condition and not (trig.condition == "provides:feralform" and trig.match and trig.match.tag == "feral") then
           text = condition:gsub("^%l", string.upper) .. ", " .. text:gsub("^%u", string.lower)
@@ -1978,6 +2011,7 @@ function Describe.Lines(def, context)
       end
       if details and trig.on == "regularHit" then add("Extra attacks do not trigger this effect.", grey, "detail") end
       if details and trig.oncePerActivation then add("Each use can trigger this effect only once.", grey, "detail") end
+      if details and trig.effective and (trig.healing or trig.on == "healed" or trig.on == "hotTick") then add("Overhealing does not count.", grey, "detail") end
     end
   end
   for _, text in ipairs(bankReferences(def, context, details)) do add(text, green) end
@@ -1994,7 +2028,7 @@ function Describe.Lines(def, context)
     if text ~= "" and not emitted[text] then add(text, green, "adjacency") emitted[text] = true end
   end
   for _, rule in ipairs(def.adjacency) do
-    local subject, singular = adjacencySubject(rule)
+    local subject, singular = adjacencySubject(rule, def)
     if rule.mods then addAdjacent(modifierSentence(rule.mods, subject, singular)) end
     if rule.selfMods or rule.stats then
       local suffix

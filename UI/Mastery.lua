@@ -113,16 +113,22 @@ local function showDetails(row)
   local run = ns.run
   if not run or not row.spec then return end
   local points = run:TalentInfo().allocation[row.spec] or 0
+  local details = IsShiftKeyDown and IsShiftKeyDown() or false
+  local hasDetails = false
+  ns.UI.Tooltip.Hide()
   GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
   GameTooltip:ClearLines()
   GameTooltip:AddDoubleLine(row.name:GetText(), tostring(points), 1, 0.82, 0, 1, 1, 1)
-  for _, line in ipairs(ns.Mastery.Lines(run.class, row.spec, points)) do
+  for _, line in ipairs(ns.Mastery.Lines(run.class, row.spec, points, details)) do
+    hasDetails = hasDetails or line.hasDetails
     local text = line.text
     if (line.points or 0) > 0 then text = string.format(L["%d points: %s"], line.points, text) end
     local color = line.active and T.C.good or T.C.muted
     GameTooltip:AddLine(text, color[1], color[2], color[3], true)
   end
+  if not details and hasDetails then GameTooltip:AddLine(L["Hold Shift for more details"], 0.6, 0.6, 0.6, true) end
   GameTooltip:Show()
+  ns.UI.Tooltip.TrackModifiers(row, function() showDetails(row) end)
 end
 
 local function change(panel, row, amount)

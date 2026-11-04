@@ -299,7 +299,7 @@ end
 
 function Grid:LiftBag(p)
   local items = self:BagItems(p)
-  local cargo = {}
+  local cargo = { rot = p.rot }
   for _, it in ipairs(items) do cargo[#cargo + 1] = { id = it.id, uid = it.uid, dx = it.x - p.x, dy = it.y - p.y, rot = it.rot } end
   for _, it in ipairs(items) do self:RemoveItem(it) end
   self:RemoveBag(p)
@@ -312,8 +312,18 @@ local function bagCargoPlan(grid, def, x, y, rot, cargo, stashSpace)
   local p, err = attempt:PlaceBag(def, x, y, rot)
   if not p then return nil, err end
   local stashed = {}
+  local originalRotation = cargo and cargo.rot or rot
+  local turns = (rot - originalRotation) % 4
   for _, c in ipairs(cargo or {}) do
-    local ip = attempt:PlaceItem(ns.Items[c.id], x + c.dx, y + c.dy, c.rot)
+    local itemDef = ns.Items[c.id]
+    local dx, dy, itemRotation = c.dx, c.dy, c.rot
+    for turn = 1, turns do
+      local bagShape = ns.RotationCells(def, originalRotation + turn - 1)
+      local itemShape = ns.RotationCells(itemDef, itemRotation)
+      dx, dy = bagShape.h - dy - itemShape.h, dx
+      itemRotation = (itemRotation + 1) % 4
+    end
+    local ip = attempt:PlaceItem(itemDef, x + dx, y + dy, itemRotation)
     if not ip then
       if #stashed >= (stashSpace or 0) then return nil, "The items inside would not fit there." end
       stashed[#stashed + 1] = c

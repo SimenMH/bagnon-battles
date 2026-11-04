@@ -94,10 +94,10 @@ add("DRUID", 1, { id = "wrath_periodic", minRound = 2, hybrid = true,
   support = "improved_wrath improved_moonfire moonglow natures_grace rejuvenation reflection mark_of_the_wild innervate moonkin_form" })
 add("DRUID", 2, { id = "shred_finisher", minRound = 3, secondary = "balance",
   core = "cat_form claw rip ferocious_bite", train = "claw rip ferocious_bite", supportTrain = "improved_shred", payoff = "ferocious_bite",
-  support = "rake shred improved_shred feral_aggression faerie_fire_feral pounce omen_of_clarity mark_of_the_wild tigers_fury leader_of_the_pack" })
+  support = "rake shred improved_shred feral_aggression faerie_fire pounce omen_of_clarity mark_of_the_wild tigers_fury leader_of_the_pack" })
 add("DRUID", 3, { id = "swipe_control", minRound = 3,
   core = "bear_form swipe enrage_druid bash", train = "swipe bear_form", supportTrain = "improved_enrage", payoff = "swipe",
-  support = "primal_fury improved_enrage feral_charge brutal_impact faerie_fire_feral demoralizing_roar mark_of_the_wild" })
+  support = "primal_fury improved_enrage feral_charge brutal_impact faerie_fire demoralizing_roar mark_of_the_wild" })
 add("DRUID", 1, { id = "hurricane_channel", minRound = 7, hybrid = true,
   core = "hurricane moonfire rejuvenation", train = "hurricane moonfire", supportTrain = "barkskin", payoff = "hurricane",
   support = "barkskin entangling_roots thorns improved_thorns natures_grasp mark_of_the_wild innervate" })

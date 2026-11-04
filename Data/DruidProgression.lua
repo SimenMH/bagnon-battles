@@ -130,8 +130,6 @@ H.RankProfile{ key = "thick_hide", overrides = { [2] = { ["triggers.1.effects.1.
 
 H.RankProfile{ key = "bash", overrides = { [2] = { ["use.effects.1.coef"] = 0.8 }, [3] = { ["use.effects.1.coef"] = 1.05 } }, resourceCosts = { [2] = 25, [3] = 25 } }
 
-H.RankProfile{ key = "faerie_fire_feral", overrides = { [2] = { ["use.effects.1.value"] = 35 }, [3] = { ["use.effects.1.value"] = 45 } } }
-
 H.RankProfile{ key = "improved_enrage", overrides = { [2] = { ["triggers.1.effects.1.amount"] = 7.5 }, [3] = { ["triggers.1.effects.1.amount"] = 10 } } }
 
 H.RankProfile{ key = "improved_shred", overrides = { [2] = { ["triggers.1.effects.1.value"] = -15 }, [3] = { ["triggers.1.effects.1.value"] = -20 } } }

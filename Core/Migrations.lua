@@ -674,10 +674,78 @@ local function migrateDraftShapes(data, info)
   return candidate, info
 end
 
+local FERAL_FAERIE_FIRE_RANKS = { [3280] = 1, [13280] = 2, [23280] = 3 }
+
+local function migrateFeralFaerieFire(data, context)
+  if ns.Items[3280] or not ns.RETIRED_IDS[3280] then return data end
+  if not dense(data.i, 4) or data.stash ~= nil and not dense(data.stash, 1) then return nil end
+  local items, stash, owned, rank = {}, {}, 0, 1
+  for index = 1, #data.i, 4 do
+    local retiredRank = FERAL_FAERIE_FIRE_RANKS[data.i[index]]
+    if retiredRank then
+      owned, rank = owned + 1, math.max(rank, retiredRank)
+      context.feralFirePlacement = { data.i[index + 1], data.i[index + 2], data.i[index + 3] }
+    else
+      for offset = 0, 3 do items[#items + 1] = data.i[index + offset] end
+    end
+  end
+  for _, id in ipairs(data.stash or {}) do
+    local retiredRank = FERAL_FAERIE_FIRE_RANKS[id]
+    if retiredRank then owned, rank = owned + 1, math.max(rank, retiredRank)
+    else stash[#stash + 1] = id end
+  end
+  local learned, credit
+  if type(data.learnedRanks) == "table" then learned = data.learnedRanks.faerie_fire_feral end
+  if type(data.trainingResale) == "table" then credit = data.trainingResale.faerie_fire_feral end
+  if owned == 0 and learned == nil and credit == nil then return data end
+  local function integer(value, low, high)
+    return type(value) == "number" and value == value and value < math.huge
+      and value == math.floor(value) and value >= low and (not high or value <= high)
+  end
+  if data.class ~= "DRUID" or owned > 1 or not integer(data.round, 2, Economy.ROUNDS + 1)
+    or not integer(data.gold, 0) or #(data.stash or {}) > Run.STASH_SIZE
+    or data.learnedRanks ~= nil and type(data.learnedRanks) ~= "table"
+    or data.trainingResale ~= nil and type(data.trainingResale) ~= "table"
+    or learned ~= nil and not integer(learned, 1, 3) then return nil end
+  rank = math.max(rank, learned or 1)
+  if data.round < (rank == 3 and 7 or rank == 2 and 4 or 2) then return nil end
+  local cap = rank == 3 and 5 or rank == 2 and 2 or 0
+  if credit ~= nil and (rank < 2 or not integer(credit, 0, cap) or owned == 0 and credit > 0) then return nil end
+  local refund = owned == 1 and 4 + (credit or data.trainingResale == nil and cap or 0) or 0
+  local candidate = Util.ShallowCopy(data)
+  candidate.i, candidate.stash, candidate.gold = items, stash, data.gold + refund
+  for _, field in ipairs({ "learnedRanks", "trainingResale" }) do
+    if data[field] then
+      candidate[field] = Util.ShallowCopy(data[field])
+      candidate[field].faerie_fire_feral = nil
+    end
+  end
+  context.retiredFaerieFire, context.retiredRefunded = true, refund
+  return candidate
+end
+
+local function finishFeralFaerieFire(data, context)
+  local placement = context.feralFirePlacement
+  if placement then
+    local x, y, rot = unpack(placement)
+    if not coordinates(x, y, rot) then return nil end
+    local grid = ns.Grid.Deserialize(data.g, data.i, data.class, data.home)
+    if not grid or not grid:CanPlaceItem({ kind = "ability", rots = ns.BuildRotations({ "11" }) }, x, y, rot) then return nil end
+  end
+  if context.retiredFaerieFire then
+    context.info = context.info or { quivers = 0, ammo = 0, removed = 0, refunded = 0 }
+    context.info.changed, context.info.retiredFaerieFire = true, true
+    context.info.retiredRefunded = context.retiredRefunded
+  end
+  return data, context
+end
+
 function Migrations.Upgrade(data)
   local context = { inferCompanions = data.class == "PALADIN" and data.dataVersion == 21 }
-  if data.dataVersion == ns.DATA_VERSION then return data, context end
-  if not supportedLegacy(data) then return nil end
+  if data.dataVersion ~= ns.DATA_VERSION and not supportedLegacy(data) then return nil end
+  data = migrateFeralFaerieFire(data, context)
+  if not data then return nil end
+  if data.dataVersion == ns.DATA_VERSION then return finishFeralFaerieFire(data, context) end
   local version = data.dataVersion
   if version < 37 and not validPreV37Ranks(data) then return nil end
   if needsInventoryMigration(data) then
@@ -711,7 +779,7 @@ function Migrations.Upgrade(data)
   end
   data = Util.ShallowCopy(data)
   data.dataVersion = ns.DATA_VERSION
-  return data, context
+  return finishFeralFaerieFire(data, context)
 end
 
 function Migrations.RepairInventory(data)
@@ -765,9 +833,9 @@ function Migrations.FitsRemovedPlacement(grid, placement)
 end
 
 function Migrations.PurgeRetiredOffers(run)
-  if not ns.RETIRED_IDS[BLOODRAGE_ID] or ns.Items[BLOODRAGE_ID] then return end
   for index = #run.shop.offers, 1, -1 do
-    if run.shop.offers[index] == BLOODRAGE_ID then run:RemoveOffer(index) end
+    local id = run.shop.offers[index]
+    if not ns.Items[id] and ns.RETIRED_IDS[id] and (id == BLOODRAGE_ID or FERAL_FAERIE_FIRE_RANKS[id]) then run:RemoveOffer(index) end
   end
 end
 
@@ -789,6 +857,9 @@ local function refundMessage(info, messages)
   if info and (info.trainingRefunded or 0) > 0 then
     messages[#messages + 1] = string.format(L["Refunded %d gold from previous training costs."], info.trainingRefunded)
   end
+  if info and (info.retiredRefunded or 0) > 0 then
+    messages[#messages + 1] = string.format(L["Refunded %d gold for Faerie Fire (Feral)."], info.retiredRefunded)
+  end
 end
 
 function Migrations.LoadSaved(saved)
@@ -801,13 +872,15 @@ function Migrations.LoadSaved(saved)
     out.messages[1] = string.format(L["Your saved run could not be loaded and was kept unchanged, with a backup: %s"], tostring(run))
     return out
   end
-  if run and migration and migration.changed and (legacy or migration.trainingAdjusted or migration.shapeAdjusted) then
+  if run and migration and migration.changed and (legacy or migration.trainingAdjusted or migration.shapeAdjusted or migration.retiredFaerieFire) then
     out.backups[1] = { reason = "migration", run = original }
     out.save = run:Serialize()
     if migration.quivers > 0 or migration.ammo > 0 then
       out.messages[1] = L[migration.quivers > 0 and "Quivers replaced with bags. Original save backed up." or "Extra ammo stored or refunded. Original save backed up."]
     elseif migration.shapeAdjusted then
       out.messages[1] = L["Ability shapes updated. Original save backed up."]
+    elseif migration.retiredFaerieFire then
+      out.messages[1] = L["Faerie Fire (Feral) removed. Original save backed up."]
     else
       out.messages[1] = L["Ability training updated. Original save backed up."]
     end

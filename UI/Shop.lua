@@ -654,6 +654,7 @@ local function tryPlace(x, y)
     swapWith = def.kind ~= "bag" and swapCandidate(def, tx, ty, cursor.rot) or nil
     if not swapWith then
       local _, err = canPlaceCursor(def, tx, ty, cursor.rot)
+      if def.kind == "bag" then cancelCursor() end
       T.Error(err or L["Can't place that there."])
       return
     end
@@ -665,7 +666,9 @@ local function tryPlace(x, y)
   end
   local ok, err = commitPlacement(def, tx, ty, cursor.rot)
   if not ok then
-    if swapWith and not r:PlaceHeld(ns.Items[swapWith.id], swapWith.x, swapWith.y, swapWith.rot, nil, swapWith.uid) then
+    if def.kind == "bag" then
+      cancelCursor()
+    elseif swapWith and not r:PlaceHeld(ns.Items[swapWith.id], swapWith.x, swapWith.y, swapWith.rot, nil, swapWith.uid) then
       endHold(true)
       clearCursor()
     end
@@ -686,9 +689,14 @@ end
 
 local function rotateCursor()
   if not cursor then return end
-  if cursor.cargo and #cursor.cargo > 0 then return end
   local previousRotation = cursor.rot
-  cursor.rot = ns.NextRotation(cursor.def, cursor.rot)
+  if cursor.cargo and #cursor.cargo > 0 then
+    local previousShape = ns.RotationCells(cursor.def, previousRotation)
+    cursor.rot = (previousRotation + 1) % 4
+    cursor.grabX, cursor.grabY = previousShape.h - 1 - cursor.grabY, cursor.grabX
+  else
+    cursor.rot = ns.NextRotation(cursor.def, cursor.rot)
+  end
   if cursor.rot ~= previousRotation then T.PlaySound(T.SOUND_CLICK) end
   local rot = ns.RotationCells(cursor.def, cursor.rot)
   cursor.grabX = Util.Clamp(cursor.grabX, 0, rot.w - 1)

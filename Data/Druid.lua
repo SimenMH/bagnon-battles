@@ -634,14 +634,6 @@ ability(2123, "brutal_impact", "Brutal Impact", "feral", "ability_druid_bash", 4
 
 
 
-ability(3280, "faerie_fire_feral", "Faerie Fire (Feral)", "feral", "Spell_Nature_FaerieFire", 1, {
-  cost = 4, minRound = 2, shape = S.h2, tags = { "feral", "nature" },
-  use = {
-    cd = 12, initialDelay = 1, requires = "feralform",
-    effects = { { type = "debuff", key = "faerie_fire_feral", name = "Faerie Fire", exclusiveGroup = "druid_faerie_fire", stat = "armor", value = 25, duration = 12 } },
-  },
-})
-
 ability(3281, "improved_enrage", "Improved Enrage", "resto", "Ability_Druid_Enrage", 1, {
   cost = 2, minRound = 2, tags = { "feral", "bear" },
   triggers = { { on = "anyUse", condition = "provides:bearform", match = { key = "enrage_druid" }, effects = { { type = "resource", resource = "rage", amount = 5 } } } },

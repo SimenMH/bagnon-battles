@@ -106,9 +106,19 @@ local function rememberSelfName(name)
   ns.db.global.selfNames[localName] = name ~= localName and name or nil
 end
 
-function Comm.SelfName(who)
+function Comm.SelfNames(who)
   local names = ns.db and ns.db.global.selfNames
-  return names and names[who]
+  local excluded = {}
+  local function add(name)
+    if not name then return end
+    excluded[name] = true
+    local alias = names and names[name]
+    if alias then excluded[alias] = true end
+  end
+  add(who)
+  add(ns.PlayerName())
+  if ns.IS_FOREVER then add(GetUnitName("player")) end
+  return excluded
 end
 
 local function timer(delay, fn)

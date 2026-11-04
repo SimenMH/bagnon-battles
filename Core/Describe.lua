@@ -426,9 +426,17 @@ local function describeEffect(e, trigger, details, context, owner)
         SCHOOL_LABELS[e.damageSchool] or e.damageSchool, durationText(e))
     end
     if e.free then
-      local bonus = e.stat == "dmgPct" and (e.value or 0) > 0 and string.format(" and deals %s%% more damage", fmtNumber(e.value)) or ""
-      if e.stat == "crit" and (e.value or 0) > 0 then bonus = " and gains " .. fmtStat(e.stat, e.value) end
-      return string.format("Your next %s costs nothing%s. Lasts %s sec.", effectNoun(e, false), bonus, fmtNumber(e.duration))
+      local plural = not e.charges or e.charges > 1
+      local subject = "Your " .. (e.charges and ("next " .. (e.charges > 1 and e.charges .. " " or "")) or "") .. effectNoun(e, plural)
+      local resources = {}
+      for _, resource in ipairs(Describe.TriggerResources(owner, e.match)) do
+        if resource ~= ns.RESOURCE_NAMES.combo then resources[#resources + 1] = resource end
+      end
+      local cost = #resources > 0 and "no " .. joinOr(resources) or "nothing"
+      local bonus = e.stat == "dmgPct" and (e.value or 0) > 0 and string.format(" and %s %s%% more damage", plural and "deal" or "deals", fmtNumber(e.value)) or ""
+      if e.stat == "crit" and (e.value or 0) > 0 then bonus = " and " .. (plural and "gain " or "gains ") .. fmtStat(e.stat, e.value) end
+      if e.charges then return string.format("%s within %s sec %s %s%s.", subject, fmtNumber(e.duration), plural and "cost" or "costs", cost, bonus) end
+      return string.format("%s cost %s%s for %s sec.", subject, cost, bonus, fmtNumber(e.duration))
     end
     if ns.Sim.ITEM_STATS[e.stat] then
       local plural = e.charges and e.charges > 1 or not e.charges and not (e.match and e.match.key)
@@ -771,6 +779,23 @@ local function sameEffect(a, b)
   return true
 end
 
+local function chargeWard(def)
+  local use = def.use
+  if not use or #use.effects ~= 2 then return nil end
+  local buff, charge = use.effects[1], use.effects[2]
+  if buff.type ~= "buff" or buff.stat ~= "none" or buff.charges or buff.target or buff.free or buff.periodic
+    or charge.type ~= "charge" or (charge.amount or 1) ~= charge.max or use.condition ~= "notBuff:" .. buff.key then return nil end
+  for _, trigger in ipairs(def.triggers) do
+    local spent, hit, removed = trigger.effects[1], trigger.effects[2], trigger.effects[3]
+    if #trigger.effects == 3 and spent.type == "charge" and spent.key == charge.key and spent.amount == -1
+      and hit.type == "damage" and removed.type == "buff" and removed.key == buff.key and removed.charges == 0
+      and removed.cond == "chargesAtMost:" .. charge.key .. ":0"
+      and sameEffect(trigger.condition, { "buff:" .. buff.key, "chargesAtLeast:" .. charge.key .. ":1" }) then
+      return { buff = buff, charge = charge, trigger = trigger }
+    end
+  end
+end
+
 local function effectLines(effects, trigger, resource, details, context, owner)
   local lines = {}
   local index = 1
@@ -786,10 +811,38 @@ local function effectLines(effects, trigger, resource, details, context, owner)
       described.pointResource = resource
     end
     local text = describeEffect(described, trigger, details, context, owner)
+    if effect.type == "buff" and effect.gearCoef and (effect.value or 0) == 0 and not (effect.target or effect.charges)
+      and (not effect.gearStat or effect.gearStat == effect.stat) then
+      local stats = { STAT_LABELS[effect.stat] or effect.stat }
+      while effects[index + count] do
+        local nextEffect = effects[index + count]
+        if nextEffect.gearStat and nextEffect.gearStat ~= nextEffect.stat then break end
+        local compared = Util.ShallowCopy(nextEffect)
+        compared.key, compared.name, compared.stat, compared.gearStat = effect.key, effect.name, effect.stat, effect.gearStat
+        if not sameEffect(effect, compared) then break end
+        stats[#stats + 1] = STAT_LABELS[nextEffect.stat] or nextEffect.stat
+        count = count + 1
+      end
+      if count > 1 then
+        local names = table.concat(stats, ", ", 1, #stats - 1) .. " and " .. stats[#stats]
+        text = string.format("Gain %s%% more %s from equipped items%s.", fmtNumber(effect.gearCoef * 100), names, durationText(effect))
+      end
+    end
+    if effect.type == "cdr" and effects[index + 1] and effects[index + 2] then
+      local tick = Util.ShallowCopy(effect)
+      tick.type, tick.amount, tick.clampReady, tick.rankScale = "tickHots", nil, nil, nil
+      if sameEffect(tick, effects[index + 1]) then
+        tick.type = "tickDots"
+        if sameEffect(tick, effects[index + 2]) then
+          text = string.format("Reduce %s cooldowns by %s sec and trigger an extra tick of their healing and damage over time effects.", effectNoun(effect, false), fmtNumber(effect.amount))
+          count = 3
+        end
+      end
+    end
     if effect.perCombo and not (effect.type == "damage" and effect.consumeDots) then
       text = text .. string.format(" +%s%% per combo point spent.", fmtNumber(effect.perCombo * 100))
     end
-    if count > 1 then
+    if count > 1 and effect.type == "damage" then
       local hits = count == 2 and "Hits twice." or string.format("Hits %d times.", count)
       text = hits .. " " .. text:gsub("^Deals ", "Each hit deals ")
     end
@@ -1414,15 +1467,16 @@ local function triggerArticle(noun, named)
   return (noun:match("^[AEIOUaeiou]") and "an " or "a ") .. noun
 end
 
-local function triggerCondition(trig)
+local function triggerCondition(trig, activeKey)
   if not trig.condition then return nil end
+  if activeKey and trig.condition == "buff:" .. activeKey then return "while active" end
   if type(trig.condition) == "table" then
     local parts = {}
     local specificPet = false
     for _, entry in ipairs(trig.condition) do if type(entry) == "string" and entry:match("^provides:warlock_") then specificPet = true end end
     for _, entry in ipairs(trig.condition) do
       if entry ~= "provides:pet" or not specificPet then
-        local text = triggerCondition({ condition = entry })
+        local text = triggerCondition({ condition = entry }, activeKey)
         if text then
           if #parts > 0 and parts[1]:match("^while ") then text = text:gsub("^while ", "") end
           parts[#parts + 1] = text
@@ -1679,15 +1733,35 @@ function Describe.Lines(def, context)
     add(string.format("Gain %s%% more %s from equipped items.", fmtNumber(coefficient * 100), table.concat(gearGroups[coefficient], ", ")), green)
   end
   if def.grants then
-    for _, res in ipairs(Util.SortedKeys(def.grants)) do
+    local resources, included, capacities = {}, {}, {}
+    for _, res in ipairs({ "mana", "energy", "rage", "focus", "combo" }) do
+      if def.grants[res] then resources[#resources + 1], included[res] = res, true end
+    end
+    for _, res in ipairs(Util.SortedKeys(def.grants)) do if not included[res] then resources[#resources + 1] = res end end
+    for _, res in ipairs(resources) do
       local cfg = def.grants[res]
-      local text = string.format("Maximum %s: %s. Starts with %s.", ns.RESOURCE_NAMES[res] or res, fmtNumber(cfg.max), fmtNumber(cfg.start or 0))
-      if (cfg.regen or 0) > 0 then text = text .. string.format(" Regenerates %s per second.", fmtNumber(cfg.regen)) end
-      add(text, white)
+      capacities[#capacities + 1] = fmtNumber(cfg.max) .. " " .. (ns.RESOURCE_NAMES[res] or res)
+    end
+    if #capacities > 0 then add(table.concat(capacities, ", "), white) end
+    local showRegen = def.kind ~= "form" and def.kind ~= "pet"
+    if showRegen then
+      for _, res in ipairs(resources) do
+        local cfg = def.grants[res]
+        if (cfg.regen or 0) > 0 then add(string.format("Regenerates %s %s per second.", fmtNumber(cfg.regen), ns.RESOURCE_NAMES[res] or res), white) end
+      end
+    end
+    if details then
+      for _, res in ipairs(resources) do
+        local cfg = def.grants[res]
+        local text = string.format("Starts with %s %s.", fmtNumber(cfg.start or 0), ns.RESOURCE_NAMES[res] or res)
+        if not showRegen and (cfg.regen or 0) > 0 then text = text .. string.format(" Regenerates %s per second.", fmtNumber(cfg.regen)) end
+        add(text, grey, "detail")
+      end
     end
   end
   if def.provides then
     local list = type(def.provides) == "table" and def.provides or { def.provides }
+    local provided = Util.Set(list)
     for _, p in ipairs(list) do
       local used = false
       for _, candidate in ipairs(ns.ItemList) do
@@ -1697,10 +1771,16 @@ function Describe.Lines(def, context)
         end
         if used then break end
       end
-      if used and p ~= "aspect" and REQUIRE_LABELS[p] then add("Enables " .. REQUIRE_LABELS[p] .. " abilities.", white) end
+      if used and p ~= "aspect" and not (p == "feralform" and (provided.catform or provided.bearform)) and REQUIRE_LABELS[p] then
+        local label = REQUIRE_LABELS[p]:gsub("^a ", ""):gsub("^an ", "")
+        add("Enables " .. label .. " abilities.", white)
+      end
     end
   end
   local use = def.use
+  local ward = not details and chargeWard(def)
+  local activeKey
+  if not details and use and #use.effects == 1 and use.effects[1].type == "buff" and use.effects[1].stat == "none" then activeKey = use.effects[1].key end
   if use and (details or not standardWeaponUse(def)) then
     if use.needsNeighbor then
       local recipient = use.needsNeighbor.kind == "pet" and "an active pet" or "a " .. matchNoun(use.needsNeighbor, false)
@@ -1723,11 +1803,14 @@ function Describe.Lines(def, context)
     end
     if use.channel then
       add("Channeled: " .. fmtNumber(use.channel.duration) .. "s", gold, "timing")
-      add("Cannot attack or cast other spells while channeling.", grey)
+      if details then add("Cannot attack or cast other spells while channeling.", grey, "detail") end
     end
-    if use.prepare then add("Cast time: " .. fmtNumber(use.prepare) .. "s. Interrupted by crowd control.", gold, "timing") end
+    if use.prepare then
+      add("Cast time: " .. fmtNumber(use.prepare) .. "s", gold, "timing")
+      if details then add("Interrupted by crowd control.", grey, "detail") end
+    end
     if use.delay then add("Detonates after " .. fmtNumber(use.delay) .. "s.", gold, "timing") end
-    if def.actor == "pet" then add("Pet ability. Usable while channeling.", grey) end
+    if def.actor == "pet" then add(details and "Pet ability. Usable while channeling." or "Pet ability.", grey, "detail") end
     local costs = {}
     if use.resource and (use.spendAll or use.cost and use.cost > 0) then
       if use.spendAll then
@@ -1748,7 +1831,11 @@ function Describe.Lines(def, context)
         or string.format("%d Combo Points", use.comboCost)
     end
     if #costs > 0 then add(table.concat(costs, ", "), white, "cost") end
-    for _, text in ipairs(effectLines(use.effects, nil, use.resource, details, context, def)) do add(text, green, "effect") end
+    if ward then
+      add(string.format("Gain %s charges for %s sec.", fmtNumber(ward.charge.amount), fmtNumber(ward.buff.duration)), green, "effect")
+    else
+      for _, text in ipairs(effectLines(use.effects, nil, use.resource, details, context, def)) do add(text, green, "effect") end
+    end
     if use.empower then
       local source = ns.ItemsByKey[use.empower.key]
       local owned = false
@@ -1761,6 +1848,7 @@ function Describe.Lines(def, context)
       end
     end
     local useCondition = use.condition and conditionLabel(use.condition, not details)
+    if ward then useCondition = nil end
     if useCondition then
       useCondition = useCondition:gsub(", While ", " and while "):gsub(", Against ", " and against ")
       if useCondition:match("^Below ") then useCondition = useCondition:gsub("^Below ", "Activates below ")
@@ -1780,7 +1868,7 @@ function Describe.Lines(def, context)
       for _, r in ipairs(list) do
         local implied = (r == "melee" and (required.twohand or required.dualwield))
           or (r == "weapon" and (required.melee or required.twohand or required.dualwield or required.ranged))
-          or (r == "pet" and specificPet)
+          or (r == "pet" and (specificPet or use.needsNeighbor and use.needsNeighbor.kind == "pet"))
         if not implied and (not context or not context.provides or not context.provides[r]) then parts[#parts + 1] = REQUIRE_LABELS[r] or r end
       end
       if #parts > 0 then add("  Requires " .. table.concat(parts, " and ") .. ".", { r = 1, g = 0.4, b = 0.4 }) end
@@ -1803,9 +1891,14 @@ function Describe.Lines(def, context)
       add(string.format("While your %s is active, taking damage reduces its attack cooldown by %s sec.", pet, fmtNumber(effect.amount)), green, "trigger")
     elseif details or not trig.detail then
       local passive = passiveTrigger(trig) or triggerConstant(trig)
-      local condition = triggerCondition(trig)
+      local condition = triggerCondition(trig, activeKey)
+      local effects = trig.effects
+      if ward and trig == ward.trigger then
+        condition = nil
+        effects = { trig.effects[1], trig.effects[2] }
+      end
       local parts, notes = {}, {}
-      for _, text in ipairs(effectLines(trig.effects, trig, nil, details, context, def)) do
+      for _, text in ipairs(effectLines(effects, trig, nil, details, context, def)) do
         if text ~= "" and not text:match("^%s*Adjacent effects:") then
           local clause, note = triggerOutcome(text)
           parts[#parts + 1] = clause
@@ -1876,9 +1969,9 @@ function Describe.Lines(def, context)
         add(text, green, passive and "passive" or "trigger")
       end
       if trig.icd and not (trig.counterKey and emittedCooldowns[trig.counterKey]) then
-        local text = "This effect cannot occur more than once every " .. fmtNumber(trig.icd) .. " sec."
+        local text = "Once every " .. fmtNumber(trig.icd) .. " sec."
         if trig.counterKey and sharedCooldowns[trig.counterKey] > 1 and not sharedShadow then
-          text = text .. " These triggers share this cooldown."
+          text = "These effects share a " .. fmtNumber(trig.icd) .. " sec cooldown."
         end
         add(text, grey, "detail")
         if trig.counterKey then emittedCooldowns[trig.counterKey] = true end

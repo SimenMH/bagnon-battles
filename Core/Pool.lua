@@ -170,12 +170,13 @@ end
 function Pool.Candidates(round, opts)
   opts = opts or {}
   local exclude = opts.exclude or {}
+  local excludedAuthors = opts.excludedAuthors or {}
   local out = {}
   local bucket = bucketFor(round)
   if not bucket then return out end
   for i = 1, #bucket.list do
     local rec = bucket.list[i]
-    if not exclude[rec.id] and rec.b.n ~= opts.ownName and rec.b.n ~= opts.ownAlias and (opts.allowBots or not rec.bot) then
+    if not exclude[rec.id] and not excludedAuthors[rec.b.n] and (opts.allowBots or not rec.bot) then
       out[#out + 1] = rec
     end
   end

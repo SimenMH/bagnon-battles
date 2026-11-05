@@ -33,6 +33,11 @@ local MAX_AURAS = 12
 local LOG_H = 84
 local BAG_GAP = 16
 local RES_ORDER = T.RESOURCE_ORDER
+local OPPONENT_SOURCES = {
+  bot = { L["Bot"], T.C.bad },
+  stored = { L["Stored build"], T.C.gold },
+  live = { L["Live player"], T.C.good },
+}
 
 local activationKey = Playback.ActivationKey
 
@@ -950,7 +955,7 @@ local function showOpponent()
   theirs.portrait:SetClass(fighter.classKey)
   theirs.name:SetText(fighter.name)
   theirs.name:SetTextColor(T.ClassColor(fighter.classKey))
-  theirs.sub:SetText(string.format("%s   %d - %d", theirClass.name, fighter.wins, fighter.losses))
+  theirs.sub:SetText(string.format("%s   %d - %d", theirClass.name, fighter.wins, fighter.losses) .. state.opponentSource)
   theirs.grid:SetGrid(opponent.grid)
   updateBars(true)
   T.Pop(theirs.portrait, 1.5, 0.4)
@@ -979,7 +984,7 @@ local function beginIntro(skipMatchup)
     local card, fighter = entry[1], entry[2]
     card.portrait:SetClass(fighter.classKey)
     card.name:SetText(fighter.name)
-    card.label:SetText(ns.Classes[fighter.classKey].name)
+    card.label:SetText(ns.Classes[fighter.classKey].name .. (card == screen.introOverlay.theirs and state.opponentSource or ""))
     card.label:SetTextColor(T.ClassColor(fighter.classKey))
     card.card:SetBorderColor(T.ClassColor(fighter.classKey))
     card.record:SetText(string.format(L["Wins: %s%d|r   Losses: %s%d|r"], T.Hex(T.RGB(T.C.good)), fighter.wins, T.Hex(T.RGB(T.C.bad)), fighter.losses))
@@ -1206,6 +1211,7 @@ function Battle.Show(result, opponent, run)
   local previous = run.lastBattle
   local mine = previous and previous.result == result and previous.mine
   if mine and (mine.r ~= run.round or mine.c ~= ns.Classes[run.class].id) then mine = nil end
+  local source = ns.IS_DEV and OPPONENT_SOURCES[opponent.source]
   state = {
     result = result, opponent = opponent, run = run,
     round = run.round,
@@ -1217,6 +1223,7 @@ function Battle.Show(result, opponent, run)
     speed = ns.db and ns.db.global.settings.speed or 1,
     myName = displayName(run.who),
     theirName = displayName(opponent.build.n or "?"),
+    opponentSource = source and "   " .. T.Hex(T.RGB(source[2])) .. source[1] .. "|r" or "",
   }
   state.fighters = {
     A = { name = state.myName, classKey = run.class, wins = mine and mine.w or run.wins or 0, losses = mine and mine.l or run.losses or 0 },

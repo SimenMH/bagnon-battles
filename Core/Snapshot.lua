@@ -98,11 +98,16 @@ local function validAuthor(name)
   return visible
 end
 
-function Snapshot.Validate(tbl, now)
+function Snapshot.DataCompatible(version, floor)
+  if isInt(version, ns.MIN_DATA_VERSION, ns.DATA_VERSION) then return true end
+  return isInt(version, ns.DATA_VERSION + 1) and isInt(floor, 1, ns.DATA_VERSION)
+end
+
+function Snapshot.Validate(tbl, now, floor)
   if type(tbl) ~= "table" then return false, "not a table" end
   for key in pairs(tbl) do if not FIELDS[key] then return false, "unknown snapshot field" end end
   if not isInt(tbl.v) or tbl.v ~= ns.PROTOCOL_VERSION then return false, "protocol version" end
-  if not isInt(tbl.d, ns.MIN_DATA_VERSION, ns.DATA_VERSION) then return false, "data version" end
+  if not Snapshot.DataCompatible(tbl.d, floor) then return false, "data version" end
   if not isInt(tbl.c, 1) then return false, "unknown class" end
   local classDef = ns.ClassesById[tbl.c]
   if not classDef or not classDef.playable then return false, "unknown class" end

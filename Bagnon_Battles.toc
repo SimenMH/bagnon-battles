@@ -2,7 +2,7 @@
 ## Title: Bagnon Battles
 ## Notes: A backpack auto-battler with Classic classes, gear and spells. Build your bag, then fight other players' builds.
 ## Author: Boopiti
-## Version: 0.3.0
+## Version: 0.4.0
 ## SavedVariables: BagnonBattlesDB
 ## IconTexture: Interface\Icons\INV_Misc_Bag_07_Red
 ## X-Category: Miscellaneous
@@ -87,5 +87,7 @@ UI\Minimap.lua
 UI\Options.lua
 
 Core\CommTransport.lua
+Core\CommPeers.lua
+Core\CommVersion.lua
 Core\Comm.lua
 Core\Addon.lua

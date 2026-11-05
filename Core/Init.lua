@@ -1,13 +1,14 @@
 local ADDON, ns = ...
 
 ns.ADDON            = ADDON
-ns.VERSION          = "0.3.0"
+ns.VERSION          = "0.4.0"
 ns.PROTOCOL_VERSION = 1
 ns.DATA_VERSION     = 38
 ns.MIN_DATA_VERSION = 38
 ns.PREFIX           = "BgnB"
 ns.CHANNEL          = "BagnonBattles"
 ns.IS_FOREVER       = WOW_PROJECT_ID == (WOW_PROJECT_CAMELOT or 18)
+ns.IS_DEV           = ADDON == "Bagnon_Battles_Dev"
 
 ns.GRID_W     = 10
 ns.GRID_H     = 8

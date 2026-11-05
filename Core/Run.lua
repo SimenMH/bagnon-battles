@@ -112,7 +112,6 @@ function Run.New(classKey, seed, who)
   run.seed = seed or Util.Now()
   run.who = who or "Player"
   run.history = {}
-  run.recent = {}
   run.phase = "shop"
   run.shop = { offers = {}, sales = {}, reserved = nil, rerolls = 0 }
   run.stash = {}
@@ -561,8 +560,6 @@ function Run:LockIn(finder)
   if won then self.wins = self.wins + 1 elseif not draw then self.losses = self.losses + 1 end
   self.history[#self.history + 1] = { round = self.round, won = won, draw = draw }
   self.shopBias = { round = self.round, talents = ns.Mastery.Unpack(self.class, self.round, mine.p) }
-  self.recent[#self.recent + 1] = opponent.id
-  while #self.recent > 5 do table.remove(self.recent, 1) end
   self.lastBattle = { result = result, opponent = opponent, mine = mine, myId = myId }
   self.phase = "result"
   return result, opponent, mine
@@ -619,7 +616,7 @@ function Run:Serialize()
   local g, i, home = self.grid:Serialize()
   return {
     class = self.class, round = self.round, wins = self.wins, losses = self.losses, gold = self.gold,
-    seed = self.seed, who = self.who, history = Util.DeepCopy(self.history), recent = Util.DeepCopy(self.recent),
+    seed = self.seed, who = self.who, history = Util.DeepCopy(self.history),
     phase = self.phase, survival = self.survival == true, survivalLife = self.survivalLife == true,
     winCounted = self.winCounted == true,
     firstRun = self.firstRun == true,
@@ -659,7 +656,6 @@ function Run.Restore(data)
   if phase ~= "shop" and phase ~= "result" and phase ~= "survival" and phase ~= "over" then return nil end
   if data.round > Economy.ROUNDS and phase ~= "over" then return nil end
   if data.history ~= nil and type(data.history) ~= "table" then return nil end
-  if data.recent ~= nil and type(data.recent) ~= "table" then return nil end
   local history = data.history or {}
   local completed = history[#history]
   if phase == "shop" and type(completed) == "table" and completed.round == data.round then
@@ -705,7 +701,6 @@ function Run.Restore(data)
     and ns.Mastery.Validate(run.class, bias.round, bias.talents) then
     run.shopBias = { round = bias.round, talents = ns.Mastery.Normalize(run.class, bias.talents) }
   end
-  run.recent = Util.DeepCopy(data.recent or {})
   run.phase = phase
   run.shop = { offers = {}, sales = {}, rerolls = data.shop and data.shop.rerolls or 0 }
   local savedShop = data.shop or {}
@@ -823,18 +818,19 @@ end
 function ns.FindOpponent(run, myId)
   local now = Util.Now()
   if not run.firstRun then
-    local exclude = Util.Set(run.recent)
     local excludedAuthors = ns.Comm and ns.Comm.SelfNames(run.who) or { [run.who] = true }
     local rec = ns.Pool.Pick(run.round, {
-      now = now, exclude = exclude, excludedAuthors = excludedAuthors, wins = run.wins,
+      now = now, excludedAuthors = excludedAuthors, wins = run.wins,
       rng = Util.NewRNG(Util.Hash32(myId .. tostring(now))),
       isOnline = ns.Comm and ns.Comm.IsOnline or nil,
+      inGuild = ns.Comm and ns.Comm.InGuild or nil,
     })
     if rec then
-      local ok, err, grid = ns.Snapshot.Validate(rec.b, now)
+      local ok, err, grid = ns.Snapshot.Validate(rec.b, now, rec.m)
       if ok then
         local classDef = ns.ClassesById[rec.b.c]
-        return { id = rec.id, build = rec.b, grid = grid, classKey = classDef.key }
+        local source = ns.Pool.IsLive(rec, now, ns.Comm and ns.Comm.IsOnline) and "live" or "stored"
+        return { id = rec.id, build = rec.b, grid = grid, classKey = classDef.key, source = source }
       end
       ns.Pool.Remove(run.round, rec.id)
     end
@@ -842,5 +838,5 @@ function ns.FindOpponent(run, myId)
   local seed = Util.Hash32(myId .. ":bot:" .. tostring(now))
   local build, grid = ns.Bots.Opponent(run.round, seed, run.firstRun)
   local classDef = ns.ClassesById[build.c]
-  return { id = "bot:" .. ns.Snapshot.Hash(build), build = build, grid = grid, classKey = classDef.key }
+  return { id = "bot:" .. ns.Snapshot.Hash(build), build = build, grid = grid, classKey = classDef.key, source = "bot" }
 end

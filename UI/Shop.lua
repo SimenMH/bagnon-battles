@@ -290,6 +290,28 @@ function Shop.RefreshStash()
   end
 end
 
+local function stashAdditions(r, previousCount)
+  local added = {}
+  for index = previousCount + 1, #r.stash do
+    local id = r.stash[index]
+    added[id] = (added[id] or 0) + 1
+  end
+  return added
+end
+
+local function animateStashAdditions(r, added)
+  if not screen or not screen.stashSlots or run() ~= r then return end
+  for index = #r.stash, 1, -1 do
+    local id = r.stash[index]
+    local slot = screen.stashSlots[index]
+    if slot and (added[id] or 0) > 0 then
+      T.Pop(slot, 1.2, 0.2)
+      T.Burst(screen.footer, slot, T.C.gold[1], T.C.gold[2], T.C.gold[3], 54)
+      added[id] = added[id] - 1
+    end
+  end
+end
+
 function Shop.RefreshGrid()
   if not screen or not run() then return end
   hideHomeTooltip()
@@ -592,12 +614,15 @@ end
 function Shop.CommitHomeMove(x, y)
   local r = run()
   if not homeMove or not r or r.phase ~= "shop" or r.grid ~= homeMove.grid or not x or not y then return false end
+  local stashCount = #r.stash
   local ok, err = r:MoveHome(x - homeMove.grabX, y - homeMove.grabY)
   if not ok then T.Error(err) return false end
+  local added = stashAdditions(r, stashCount)
   cancelHomeMove()
   T.PlaySound(T.SOUND_DROP)
   ns.Addon:SaveRun()
   Shop.RefreshAll()
+  animateStashAdditions(r, added)
   return true
 end
 
@@ -633,11 +658,14 @@ local function commitPlacement(def, x, y, rot)
     recordCrafted(crafted)
     return true
   end
+  local stashCount = #r.stash
   local p, err = r:PlaceHeld(def, x, y, rot, cursor.cargo, cursor.uid)
   if not p then return false, err end
+  local added = stashAdditions(r, stashCount)
   local crafted = r:CheckCrafting()
   T.PlaySound(T.SOUND_DROP)
   Shop.RefreshAll()
+  animateStashAdditions(r, added)
   screen.grid:PopItem(p.uid)
   recordCrafted(crafted)
   return true

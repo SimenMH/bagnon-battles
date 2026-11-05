@@ -7,9 +7,12 @@ ns.Addon = Addon
 local defaults = {
   global = {
     pool = {},
+    fought = {},
+    fights = {},
+    updateNotice = { time = 0 },
     selfNames = {},
     run = nil,
-    settings = { share = true, traffic = false, minimap = { hide = false, angle = 220 }, speed = 1, debug = false, scale = 1, lastClass = "DRUID", sounds = true, soundChannel = "SFX" },
+    settings = { share = true, traffic = false, route = "auto", minimap = { hide = false, angle = 220 }, speed = 1, debug = false, scale = 1, lastClass = "DRUID", sounds = true, soundChannel = "SFX" },
     stats = { runs = 0, gamesWon = 0, currentWinStreak = 0, bestWinStreak = 0, forgedLegendaries = 0 },
   },
 }
@@ -49,7 +52,7 @@ end
 function ns.PlayerName()
   if ns.IS_FOREVER then
     local name, surname = UnitFullName("player")
-    if surname and surname ~= "" then return (name or "Player") .. "-" .. surname end
+    if surname and surname ~= "" then return (name or "Player") .. " " .. surname end
     return name or "Player"
   end
   local name = UnitName("player")
@@ -60,6 +63,7 @@ end
 function Addon:OnInitialize()
   self.db = LibStub("AceDB-3.0"):New("BagnonBattlesDB", defaults, true)
   ns.db = self.db
+  ns.CommVersion.Init(self.db.global)
   local settings = self.db.global.settings
   if not settings.sharingLogsQuieted then
     settings.traffic, settings.debug, settings.sharingLogsQuieted = false, false, true
@@ -118,9 +122,18 @@ function Addon:HandleSlash(input)
   elseif cmd == "pool" then
     local counts = ns.Pool.Counts()
     local parts = {}
-    for r = 1, ns.Economy.ROUNDS do parts[#parts + 1] = string.format("r%d:%d", r, counts[r]) end
-    ns.Print(ns.L["Stored builds"] .. ": " .. ns.Pool.Count() .. "  " .. table.concat(parts, " "))
-    ns.Print(ns.L["Players seen"] .. ": " .. ns.Comm.PeerCount() .. "  " .. ns.L["Channel"] .. ": " .. (ns.Comm.ChannelIndex() or ns.L["not joined"]))
+    for r = 1, ns.Economy.ROUNDS do parts[#parts + 1] = string.format("r%d:%d/%d", r, ns.Pool.UnfoughtCount(r), counts[r]) end
+    ns.Print(ns.L["Stored builds"] .. ": " .. ns.Pool.Count() .. " (" .. ns.L["unfought/total"] .. ")  " .. table.concat(parts, " "))
+    ns.Print(ns.L["Players seen"] .. ": " .. ns.Comm.PeerCount() .. "  " .. ns.L["In channel"] .. ": " .. ns.Comm.PresentCount()
+      .. "  " .. ns.L["Route"] .. ": " .. ns.Comm.Route() .. "  " .. ns.L["Channel"] .. ": " .. (ns.Comm.ChannelIndex() or ns.L["not joined"]))
+  elseif cmd == "route" and ns.IS_DEV then
+    local mode = (rest or ""):lower():match("^%s*(.-)%s*$")
+    if mode == "auto" or mode == "whisper" or mode == "channel" then
+      ns.Comm.SetRoute(mode)
+      ns.Print(ns.L["Route"] .. ": " .. ns.Comm.Route())
+    else
+      ns.Print(ns.L["Usage: /bb route auto, whisper or channel"])
+    end
   elseif cmd == "share" then
     ns.Comm.SetSharing(not self.db.global.settings.share)
     ns.Print(ns.L["Build sharing"] .. ": " .. (self.db.global.settings.share and ns.L["on"] or ns.L["off"]))
@@ -149,6 +162,7 @@ function Addon:HandleSlash(input)
     ns.Print(ns.L["Stored builds cleared."])
   else
     ns.Print(ns.L["Commands: /bb, /bb pool, /bb share, /bb traffic, /bb minimap, /bb abandon"])
+    if ns.IS_DEV then ns.Print(ns.L["Usage: /bb route auto, whisper or channel"]) end
   end
 end
 
@@ -197,6 +211,7 @@ function Addon:LockIn()
   local stats = self.db.global.stats
   recordRunWin(run, stats)
   if ns.Economy.LivesRemaining(run) == 0 or run.round >= ns.Economy.ROUNDS then recordRunEnd(run, stats) end
+  ns.Pool.RecordFight(run.round, opponent)
   ns.Comm.SendBuild(mine)
   self:SaveRun()
   return result, opponent

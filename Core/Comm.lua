@@ -1,11 +1,17 @@
 local ADDON, ns = ...
 local Util = ns.Util
+local Peers = ns.CommPeers
 
 local Comm = {}
 ns.Comm = Comm
 LibStub("AceComm-3.0"):Embed(Comm)
 
-Comm.peers = {}
+Comm.peers = Peers.records
+Comm.SelfNames = Peers.SelfNames
+Comm.PeerCount = Peers.PeerCount
+Comm.PresentCount = Peers.PresentCount
+Comm.IsOnline = Peers.IsOnline
+Comm.InGuild = Peers.InGuild
 Comm.channelIndex = nil
 Comm.started = false
 Comm.SAMPLE_SIZE = 10
@@ -13,14 +19,27 @@ Comm.THIN_THRESHOLD = 12
 Comm.RATE_WINDOW = 60
 Comm.RATE_LIMIT = 30
 Comm.REQUEST_WINDOW = 60
+Comm.HELLO_FANOUT = 8
+Comm.PUSH_FANOUT = 10
+Comm.PULL_INTERVAL = 180
+Comm.HELLO_COOLDOWN = 600
+Comm.FANOUT_COOLDOWN = 60
+Comm.WHISPER_WINDOW = 10
 Comm.session = string.format("%08x", math.random(0, 0x7fffffff))
 
+local CHANNEL_EVENTS = { "CHAT_MSG_CHANNEL_JOIN", "CHAT_MSG_CHANNEL_LEAVE", "CHAT_MSG_CHANNEL_LIST", "CHAT_MSG_CHANNEL_NOTICE" }
+
 local inbound = {}
+local whispered = {}
 local lastHello = 0
 local lastRequest = 0
+local lastFanout = 0
+local lastJoined = 0
 local generation = 0
 local pendingRequest
-local selfNameSeen = false
+local filtersInstalled = false
+local fanoutGeneration
+local ticker
 
 local function settings()
   return ns.db and ns.db.global.settings or { share = true }
@@ -39,6 +58,12 @@ local function traffic(text)
   if settings().traffic then ns.Print("[traffic]", text) end
 end
 
+local function route()
+  local override = settings().route
+  if override == "whisper" or override == "channel" then return override end
+  return ns.IS_FOREVER and "whisper" or "channel"
+end
+
 local function channelStatus(index)
   local regional = "unknown"
   if index and C_ChatInfo and type(C_ChatInfo.IsChannelRegional) == "function" then
@@ -46,16 +71,7 @@ local function channelStatus(index)
     if ok and type(value) == "boolean" then regional = tostring(value) end
   end
   local channel = index and "Joined channel " .. readable(index) .. "." or "Not joined."
-  return channel .. " Regional flag: " .. regional .. "."
-end
-
-function Comm.SetTraffic(enabled)
-  local config = settings()
-  config.traffic = enabled == true
-  local state = config.traffic and "Logging on. " or "Logging off. "
-  if not config.share then state = state .. "Sharing off. " end
-  ns.Print("[traffic]", state .. channelStatus(Comm.channelIndex))
-  return config.traffic
+  return channel .. " Regional flag: " .. regional .. ". Route: " .. route() .. "."
 end
 
 local function buildSummary(build)
@@ -90,37 +106,6 @@ local function resultSummary(result)
   return readable(result, 24)
 end
 
-local function fullName(sender)
-  if not sender then return "Unknown" end
-  if not ns.IS_FOREVER and not sender:find("-", 1, true) then
-    local realm = GetNormalizedRealmName and GetNormalizedRealmName() or ""
-    if realm ~= "" then return sender .. "-" .. realm end
-  end
-  return sender
-end
-
-local function rememberSelfName(name)
-  if selfNameSeen or not ns.db then return end
-  selfNameSeen = true
-  local localName = ns.PlayerName()
-  ns.db.global.selfNames[localName] = name ~= localName and name or nil
-end
-
-function Comm.SelfNames(who)
-  local names = ns.db and ns.db.global.selfNames
-  local excluded = {}
-  local function add(name)
-    if not name then return end
-    excluded[name] = true
-    local alias = names and names[name]
-    if alias then excluded[alias] = true end
-  end
-  add(who)
-  add(ns.PlayerName())
-  if ns.IS_FOREVER then add(GetUnitName("player")) end
-  return excluded
-end
-
 local function timer(delay, fn)
   local current = generation
   local function run()
@@ -129,116 +114,59 @@ local function timer(delay, fn)
   if C_Timer and C_Timer.After then C_Timer.After(delay, run) else run() end
 end
 
+function Comm.Route()
+  return route()
+end
+
 function Comm.ChannelIndex()
   return Comm.channelIndex
 end
 
-function Comm.PeerCount()
-  local n = 0
-  local now = Util.Now()
-  for _, seen in pairs(Comm.peers) do
-    if now - seen < ns.Pool.LIVE_WINDOW then n = n + 1 end
-  end
-  return n
-end
-
-function Comm.IsOnline(name)
-  local seen = Comm.peers[name]
-  return seen ~= nil and (Util.Now() - seen) < ns.Pool.LIVE_WINDOW
-end
-
 local function hideChannelFromChat()
+  local remove = ChatFrame_RemoveChannel or (ChatFrameUtil and ChatFrameUtil.RemoveChannel)
+  if not remove then return end
   for i = 1, NUM_CHAT_WINDOWS or 10 do
     local frame = _G["ChatFrame" .. i]
-    if frame and ChatFrame_RemoveChannel then ChatFrame_RemoveChannel(frame, ns.CHANNEL) end
+    if frame then pcall(remove, frame, ns.CHANNEL) end
   end
 end
 
-function Comm.JoinChannel()
-  if not settings().share then traffic("Channel join skipped. Sharing off.") return end
-  local id = GetChannelName(ns.CHANNEL)
-  if id and id > 0 then
-    Comm.channelIndex = id
-    hideChannelFromChat()
-    traffic(channelStatus(id))
-    return true
-  end
-  traffic("Joining channel " .. readable(ns.CHANNEL) .. ".")
-  if JoinTemporaryChannel then
-    JoinTemporaryChannel(ns.CHANNEL)
-  elseif JoinChannelByName then
-    JoinChannelByName(ns.CHANNEL)
-  end
-  timer(2, function()
-    local idx = GetChannelName(ns.CHANNEL)
-    if idx and idx > 0 then
-      Comm.channelIndex = idx
-      hideChannelFromChat()
-      traffic(channelStatus(idx))
-      ns.Debug("joined channel", idx)
-      Comm.SendHello()
-      Comm.SendRequest()
-    else
-      traffic("Channel not joined yet.")
-      ns.Debug("channel join pending")
+local function hideChannelLine(_, _, ...)
+  if select(9, ...) == ns.CHANNEL then return true end
+end
+
+local function offlineTarget(message)
+  local template = ERR_CHAT_PLAYER_NOT_FOUND_S
+  if type(message) ~= "string" or type(template) ~= "string" then return end
+  local now = Util.Now()
+  for name, at in pairs(whispered) do
+    if now - at > Comm.WHISPER_WINDOW then
+      whispered[name] = nil
+    elseif message == string.format(template, name) then
+      return name
     end
-  end)
-  return false
-end
-
-function Comm.Start()
-  ns.CommTransport.SetEnabled(settings().share)
-  if Comm.started then
-    if Comm.JoinChannel() then
-      Comm.SendHello()
-      Comm.SendRequest()
-    end
-    return
-  end
-  Comm.started = true
-  Comm:RegisterComm(ns.PREFIX, "OnCommReceived")
-  timer(8, function()
-    if Comm.JoinChannel() then
-      Comm.SendHello()
-      Comm.SendRequest()
-    end
-  end)
-  if ns.Addon then
-    ns.Addon:RegisterEvent("ADDON_LOADED", function() ns.CommTransport.EnsureInstalled() end)
-    ns.Addon:RegisterEvent("CHAT_MSG_CHANNEL_NOTICE", function(_, kind, _, _, _, _, _, _, _, channelName)
-      if channelName ~= ns.CHANNEL then return end
-      if kind == "YOU_LEFT" then Comm.channelIndex = nil return end
-      if settings().share and (kind == "YOU_JOINED" or kind == "YOU_CHANGED") then
-        local idx = GetChannelName(ns.CHANNEL)
-        if idx and idx > 0 then
-          if Comm.channelIndex ~= idx then traffic(channelStatus(idx)) end
-          Comm.channelIndex = idx
-          hideChannelFromChat()
-          Comm.SendHello()
-          Comm.SendRequest()
-        end
-      end
-    end)
   end
 end
 
-function Comm.SetSharing(enabled)
-  local config = settings()
-  enabled = enabled == true
-  if config.share ~= enabled then
-    generation = generation + 1
-    lastHello, lastRequest, pendingRequest = 0, 0, nil
-  end
-  config.share = enabled
-  ns.CommTransport.SetEnabled(enabled)
-  if enabled then Comm.Start() end
-  return enabled
+local function hideOfflineLine(_, _, message)
+  if offlineTarget(message) then return true end
 end
 
-local function send(tbl, distribution, target, prio)
+local function installFilters()
+  if filtersInstalled then return end
+  local add = ChatFrame_AddMessageEventFilter or (ChatFrameUtil and ChatFrameUtil.AddMessageEventFilter)
+  if not add then return end
+  filtersInstalled = true
+  for _, event in ipairs(CHANNEL_EVENTS) do add(event, hideChannelLine) end
+  add("CHAT_MSG_SYSTEM", hideOfflineLine)
+end
+
+local function send(tbl, distribution, target)
   local summary = messageSummary(tbl)
   if not settings().share then traffic("Skipped " .. summary .. ". Sharing is off.") return false end
   tbl.k = Comm.session
+  tbl.d = tbl.d or ns.DATA_VERSION
+  tbl.m = math.max(ns.MIN_DATA_VERSION, tbl.m or 0)
   local encoded, payload = pcall(ns.Snapshot.Encode, tbl)
   if not encoded or type(payload) ~= "string" then
     traffic("Skipped " .. summary .. ". Encoding failed.")
@@ -251,8 +179,11 @@ local function send(tbl, distribution, target, prio)
   local description = summary .. " to " .. destination(distribution, target) .. ", " .. #payload .. " bytes."
   local state = { ready = false, finished = false }
   local function report()
-    if state.failed then traffic("Send failed: " .. description .. " Result " .. resultSummary(state.result) .. ".")
-    else traffic("Sent " .. description .. " Result " .. resultSummary(state.result) .. ".") end
+    if state.failed then
+      traffic("Send failed: " .. description .. " Result " .. resultSummary(state.result) .. ".")
+    else
+      traffic("Sent " .. description .. " Result " .. resultSummary(state.result) .. ".")
+    end
   end
   local function callback(_, sent, total, result)
     if state.finished or result == nil then return end
@@ -265,7 +196,9 @@ local function send(tbl, distribution, target, prio)
     end
     if state.ready and state.finished then report() end
   end
-  local ok = pcall(Comm.SendCommMessage, Comm, ns.PREFIX, payload, distribution, target, prio or "NORMAL", callback, state)
+  if distribution == "WHISPER" then whispered[target] = Util.Now() end
+  local priority = distribution == "CHANNEL" and tbl.t == "B" and "NORMAL" or "BULK"
+  local ok = pcall(Comm.SendCommMessage, Comm, ns.PREFIX, payload, distribution, target, priority, callback, state)
   if not ok then
     state.finished = true
     traffic("Send failed: " .. description .. " Send call failed.")
@@ -274,35 +207,255 @@ local function send(tbl, distribution, target, prio)
   traffic("Queued " .. description)
   state.ready = true
   if state.finished then report() end
-  return true
+  return not state.failed
+end
+
+local function hello(target)
+  return { t = "H", p = ns.PROTOCOL_VERSION, d = ns.DATA_VERSION, a = ns.VERSION, c = ns.Pool.Counts(), n = ns.PlayerName(), i = Peers.Introductions(target) }
+end
+
+local function requestRounds()
+  local rounds = ns.Pool.ThinRounds(Comm.THIN_THRESHOLD)
+  if #rounds > 0 then return rounds end
+  for r = 1, ns.Economy.ROUNDS do rounds[r] = r end
+  return rounds
+end
+
+local function request(since)
+  local id = Util.HashHex(ns.PlayerName() .. Util.Now() .. math.random(0, 0x7fffffff))
+  return { t = "R", p = ns.PROTOCOL_VERSION, r = requestRounds(), id = id, s = since }, id
+end
+
+function Comm.SendHello()
+  if not settings().share or not Comm.channelIndex or route() ~= "channel" then return end
+  local now = Util.Now()
+  if now - lastHello < 60 then return end
+  if send(hello(), "CHANNEL", Comm.channelIndex) then lastHello = now end
+end
+
+function Comm.SendRequest()
+  if not settings().share or not Comm.channelIndex or route() ~= "channel" then return end
+  local now = Util.Now()
+  if now - lastRequest < 120 then return end
+  local tbl, id = request(lastRequest)
+  if send(tbl, "CHANNEL", Comm.channelIndex) then
+    lastRequest = now
+    pendingRequest = { id = id, time = now, responders = {} }
+  end
+end
+
+function Comm.HelloFanout()
+  if not settings().share or route() ~= "whisper" then return end
+  local now = Util.Now()
+  if now - lastFanout < Comm.FANOUT_COOLDOWN then return end
+  local names = Peers.Targets(Comm.HELLO_FANOUT, function(rec)
+    return not rec.hello or now - rec.hello >= Comm.HELLO_COOLDOWN
+  end, true)
+  if #names == 0 then traffic("Hello skipped. Nobody to greet.") return end
+  for _, name in ipairs(names) do
+    if send(hello(name), "WHISPER", name) then
+      Peers.Get(name).hello, lastFanout = now, now
+    end
+  end
+end
+
+local function scheduleFanout()
+  if fanoutGeneration == generation or route() ~= "whisper" then return end
+  local current = generation
+  fanoutGeneration = current
+  timer(3, function()
+    if fanoutGeneration ~= current then return end
+    fanoutGeneration = nil
+    Comm.HelloFanout()
+  end)
+end
+
+local function pullTarget()
+  local now = Util.Now()
+  local mine = Comm.SelfNames()
+  local best, bestPulled
+  for name, rec in pairs(Comm.peers) do
+    if not mine[name] and rec.compatible == true and rec.seen and Peers.Available(rec, now) then
+      local pulled = rec.pulled or 0
+      if not best or pulled < bestPulled then best, bestPulled = name, pulled end
+    end
+  end
+  return best or Peers.Targets(1)[1]
+end
+
+function Comm.Pull()
+  if not settings().share then return end
+  if route() == "channel" then Comm.SendRequest() return end
+  local name = pullTarget()
+  if not name then traffic("Pull skipped. No peers known.") return end
+  local rec = Peers.Get(name)
+  local now = Util.Now()
+  local tbl, id = request(rec.pulled or 0)
+  if send(tbl, "WHISPER", name) then
+    rec.pulled = now
+    pendingRequest = { id = id, time = now, responders = {} }
+  end
 end
 
 function Comm.SendBuild(build)
   if not settings().share then traffic("Skipped Build. Sharing is off.") return false end
-  if not Comm.channelIndex then traffic("Skipped Build. Channel not joined.") return false end
   if InCombatLockdown and InCombatLockdown() then traffic("Skipped Build. In combat.") return false end
-  return send({ t = "B", p = ns.PROTOCOL_VERSION, b = build }, "CHANNEL", Comm.channelIndex, "NORMAL")
-end
-
-function Comm.SendHello()
-  if not settings().share or not Comm.channelIndex then return end
-  local now = Util.Now()
-  if now - lastHello < 60 then return end
-  lastHello = now
-  send({ t = "H", p = ns.PROTOCOL_VERSION, d = ns.DATA_VERSION, c = ns.Pool.Counts(), n = ns.PlayerName() }, "CHANNEL", Comm.channelIndex, "BULK")
-end
-
-function Comm.SendRequest()
-  if not settings().share or not Comm.channelIndex then return end
-  local now = Util.Now()
-  if now - lastRequest < 120 then return end
-  local rounds = ns.Pool.ThinRounds(Comm.THIN_THRESHOLD)
-  if #rounds == 0 then return end
-  lastRequest = now
-  local id = Util.HashHex(ns.PlayerName() .. now)
-  if send({ t = "R", p = ns.PROTOCOL_VERSION, d = ns.DATA_VERSION, r = rounds, id = id }, "CHANNEL", Comm.channelIndex, "BULK") then
-    pendingRequest = { id = id, time = now, responders = {} }
+  local tbl = { t = "B", p = ns.PROTOCOL_VERSION, b = build }
+  if route() == "channel" then
+    if not Comm.channelIndex then traffic("Skipped Build. Channel not joined.") return false end
+    return send(tbl, "CHANNEL", Comm.channelIndex)
   end
+  local names = Peers.Targets(Comm.PUSH_FANOUT)
+  if #names == 0 then traffic("Skipped Build. No peers known.") return false end
+  local sent = false
+  for _, name in ipairs(names) do
+    if send(tbl, "WHISPER", name) then sent = true end
+  end
+  return sent
+end
+
+local function onJoined(index)
+  local now = Util.Now()
+  if Comm.channelIndex == index and now - lastJoined < 30 then return end
+  Comm.channelIndex, lastJoined = index, now
+  hideChannelFromChat()
+  traffic(channelStatus(index))
+  ns.Debug("joined channel", index)
+  if route() == "whisper" then
+    Peers.RequestRoster(index)
+    scheduleFanout()
+    timer(6, Comm.Pull)
+  else
+    Comm.SendHello()
+    Comm.SendRequest()
+  end
+end
+
+function Comm.JoinChannel()
+  if not settings().share then traffic("Channel join skipped. Sharing off.") return false end
+  local id = GetChannelName(ns.CHANNEL)
+  if id and id > 0 then
+    onJoined(id)
+    return true
+  end
+  traffic("Joining channel " .. readable(ns.CHANNEL) .. ".")
+  if JoinTemporaryChannel then
+    JoinTemporaryChannel(ns.CHANNEL)
+  elseif JoinChannelByName then
+    JoinChannelByName(ns.CHANNEL)
+  end
+  timer(2, function()
+    local index = GetChannelName(ns.CHANNEL)
+    if index and index > 0 then
+      onJoined(index)
+    else
+      traffic("Channel not joined yet.")
+      ns.Debug("channel join pending")
+    end
+  end)
+  return false
+end
+
+local function registerEvents()
+  local addon = ns.Addon
+  addon:RegisterEvent("ADDON_LOADED", function() ns.CommTransport.EnsureInstalled() end)
+  addon:RegisterEvent("CHAT_MSG_SYSTEM", function(_, message)
+    local name = offlineTarget(message)
+    if not name then return end
+    Peers.MarkOffline(name)
+    traffic("Whisper target " .. readable(name) .. " is offline.")
+  end)
+  addon:RegisterEvent("CHAT_MSG_CHANNEL_NOTICE", function(_, kind, _, _, _, _, _, _, _, channelName)
+    if channelName ~= ns.CHANNEL then return end
+    if kind == "YOU_LEFT" then
+      Peers.CancelRoster()
+      Comm.channelIndex = nil
+      traffic("Left channel.")
+    elseif kind == "YOU_JOINED" or kind == "YOU_CHANGED" then
+      local index = settings().share and GetChannelName(ns.CHANNEL)
+      if index and index > 0 then onJoined(index) end
+    else
+      traffic("Channel notice " .. readable(kind, 32) .. ".")
+    end
+  end)
+  addon:RegisterEvent("CHAT_MSG_CHANNEL_JOIN", function(_, _, name, _, _, _, _, _, _, channelName)
+    if channelName ~= ns.CHANNEL then return end
+    if Peers.Joined(name) then scheduleFanout() end
+  end)
+  addon:RegisterEvent("CHAT_MSG_CHANNEL_LEAVE", function(_, _, name, _, _, _, _, _, _, channelName)
+    if channelName ~= ns.CHANNEL then return end
+    Peers.Left(name)
+  end)
+  local function rosterFound(count)
+    if count > 0 then
+      traffic("Channel roster lists " .. count .. " others.")
+      scheduleFanout()
+    end
+  end
+  local function rosterUpdated(_, displayIndex)
+    if not settings().share or route() ~= "whisper" then return end
+    rosterFound(Peers.ReadRoster(Comm.channelIndex, displayIndex))
+  end
+  addon:RegisterEvent("CHANNEL_ROSTER_UPDATE", rosterUpdated)
+  addon:RegisterEvent("CHANNEL_UI_UPDATE", function()
+    if settings().share and route() == "whisper" then rosterFound(Peers.RefreshRoster(Comm.channelIndex)) end
+  end)
+  addon:RegisterEvent("GUILD_ROSTER_UPDATE", Peers.ReadGuild)
+  addon:RegisterEvent("PLAYER_GUILD_UPDATE", Peers.RequestGuild)
+end
+
+function Comm.Start()
+  ns.CommTransport.SetEnabled(settings().share)
+  if Comm.started then
+    Comm.JoinChannel()
+    return
+  end
+  Comm.started = true
+  Comm:RegisterComm(ns.PREFIX, "OnCommReceived")
+  installFilters()
+  Peers.RequestGuild()
+  if ns.Addon then registerEvents() end
+  timer(8, Comm.JoinChannel)
+  if not ticker and C_Timer and C_Timer.NewTicker then
+    ticker = C_Timer.NewTicker(Comm.PULL_INTERVAL, Comm.Pull)
+  end
+end
+
+local function resetSync()
+  Peers.CancelRoster()
+  generation = generation + 1
+  lastHello, lastRequest, lastFanout, lastJoined = 0, 0, 0, 0
+  pendingRequest, fanoutGeneration = nil, nil
+end
+
+function Comm.SetSharing(enabled)
+  local config = settings()
+  enabled = enabled == true
+  if config.share ~= enabled then resetSync() end
+  config.share = enabled
+  ns.CommTransport.SetEnabled(enabled)
+  if enabled then Comm.Start() end
+  return enabled
+end
+
+function Comm.SetRoute(mode)
+  if mode ~= "auto" and mode ~= "channel" and mode ~= "whisper" then return false end
+  local config = settings()
+  if config.route ~= mode then
+    config.route = mode
+    resetSync()
+    if config.share then Comm.JoinChannel() end
+  end
+  return true
+end
+
+function Comm.SetTraffic(enabled)
+  local config = settings()
+  config.traffic = enabled == true
+  local state = config.traffic and "Logging on. " or "Logging off. "
+  if not config.share then state = state .. "Sharing off. " end
+  ns.Print("[traffic]", state .. channelStatus(Comm.channelIndex))
+  return config.traffic
 end
 
 local function requestId(id)
@@ -310,10 +463,10 @@ local function requestId(id)
 end
 
 local function solicited(distribution, sender, id, now)
-  local request = pendingRequest
-  if distribution ~= "WHISPER" or not request or id ~= request.id or now - request.time > Comm.REQUEST_WINDOW
-    or request.responders[sender] then return false end
-  request.responders[sender] = true
+  local pending = pendingRequest
+  if distribution ~= "WHISPER" or not pending or id ~= pending.id or now - pending.time > Comm.REQUEST_WINDOW
+    or pending.responders[sender] then return false end
+  pending.responders[sender] = true
   return true
 end
 
@@ -332,30 +485,31 @@ local function requestedRounds(rounds)
   return unique
 end
 
-local function compatibleData(version)
-  return type(version) == "number" and version == math.floor(version) and version >= ns.MIN_DATA_VERSION and version <= ns.DATA_VERSION
+local function sinceTime(value)
+  if type(value) == "number" and value >= 0 and value == math.floor(value) then return value end
+  return 0
 end
 
-local function respondToRequest(sender, rounds, id)
-  local peerCount = math.max(1, Comm.PeerCount())
-  local chance = math.min(1, 3 / peerCount)
-  if math.random() > chance then return end
-  local delay = math.random() * 5
-  timer(delay, function()
-    local rng = Util.NewRNG(Util.Hash32(sender .. ":" .. ns.PlayerName() .. ":" .. tostring(Util.Now())))
-    rng:Shuffle(rounds)
-    local builds = {}
-    local perRound = math.max(1, math.floor(Comm.SAMPLE_SIZE / math.max(1, #rounds)))
-    for _, r in ipairs(rounds) do
-      if #builds >= Comm.SAMPLE_SIZE then break end
-      if type(r) == "number" and r >= 1 and r <= ns.Economy.ROUNDS then
-        for _, b in ipairs(ns.Pool.Sample(r, perRound, rng)) do
-          if #builds < Comm.SAMPLE_SIZE then builds[#builds + 1] = b end
-        end
-      end
-    end
-    if #builds == 0 then return end
-    send({ t = "S", p = ns.PROTOCOL_VERSION, id = id, b = builds }, "WHISPER", sender, "BULK")
+local function sampleFor(sender, rounds, since)
+  local rng = Util.NewRNG(Util.Hash32(sender .. ":" .. ns.PlayerName() .. ":" .. tostring(Util.Now())))
+  local records = ns.Pool.ShareSample(rounds, since, Comm.SAMPLE_SIZE, rng, sender)
+  local builds, floor = {}, ns.MIN_DATA_VERSION
+  for _, rec in ipairs(records) do
+    builds[#builds + 1] = Util.DeepCopy(rec.b)
+    if rec.m then floor = math.max(floor, rec.m) end
+  end
+  return builds, floor
+end
+
+local function respondToRequest(sender, rounds, id, since, direct)
+  if not direct then
+    local chance = math.min(1, 3 / math.max(1, Comm.PeerCount()))
+    if math.random() > chance then return end
+  end
+  timer(math.random() * 5, function()
+    local builds, floor = sampleFor(sender, rounds, since)
+    if #builds == 0 then traffic("Nothing to send " .. readable(sender) .. ".") return end
+    send({ t = "S", p = ns.PROTOCOL_VERSION, id = id, b = builds, m = floor }, "WHISPER", sender)
     ns.Debug("prepared sample of", #builds, "to", sender)
   end)
 end
@@ -373,54 +527,80 @@ end
 
 function Comm:OnCommReceived(prefix, text, distribution, sender)
   if prefix ~= ns.PREFIX or not settings().share then return end
-  local senderFull = fullName(sender)
+  local senderFull = Peers.FullName(sender)
   local source = " from " .. readable(senderFull) .. " via " .. readable(distribution, 16) .. ", " .. tostring(type(text) == "string" and #text or 0) .. " bytes."
   if not rateOk(senderFull) then traffic("Rejected message" .. source .. " Rate limited.") return end
   local decoded, tbl = pcall(ns.Snapshot.Decode, text)
   if not decoded or type(tbl) ~= "table" then traffic("Rejected message" .. source .. " Malformed message.") return end
   if tbl.k == Comm.session then
-    rememberSelfName(senderFull)
+    Peers.RememberSelfName(senderFull)
     traffic("Ignored own echo" .. source)
     return
   end
-  if tbl.p ~= ns.PROTOCOL_VERSION then traffic("Rejected message" .. source .. " Protocol version mismatch.") return end
+  if tbl.p ~= ns.PROTOCOL_VERSION then
+    Peers.SetCompatible(senderFull, false)
+    traffic("Rejected message" .. source .. " Protocol version mismatch.")
+    return
+  end
   local now = Util.Now()
   if tbl.t == "B" and type(tbl.b) == "table" then
     tbl.b.n = senderFull
     tbl.b.bot = nil
-    local added, why = ns.Pool.Add(tbl.b, { firsthand = distribution ~= "WHISPER", now = now })
-    if added or why == "duplicate" then Comm.peers[senderFull] = now end
+    local added, why = ns.Pool.Add(tbl.b, { firsthand = true, now = now, floor = tbl.m })
+    if added or why == "duplicate" then Peers.Heard(senderFull, now) end
+    if why == "data version" then Peers.SetCompatible(senderFull, false) end
     local outcome = added and "Stored." or why == "duplicate" and "Duplicate." or "Rejected: " .. readable(why, 96) .. "."
     traffic("Received " .. buildSummary(tbl.b) .. source .. " " .. outcome)
     ns.Debug("build from", senderFull, added and "stored" or why)
     if added and ns.UI.Main and ns.UI.Main.OnPoolChanged then ns.UI.Main.OnPoolChanged() end
   elseif tbl.t == "H" then
-    if not compatibleData(tbl.d) then traffic("Rejected Hello" .. source .. " Data version mismatch.") return end
-    Comm.peers[senderFull] = now
+    ns.CommVersion.Note(tbl.a)
+    if not ns.Snapshot.DataCompatible(tbl.d, tbl.m) then
+      Peers.SetCompatible(senderFull, false)
+      traffic("Rejected Hello" .. source .. " Data version mismatch.")
+      return
+    end
+    Peers.Heard(senderFull, now)
+    Peers.NoteIntroductions(tbl.i, now)
     traffic("Received Hello" .. source)
     ns.Debug("hello from", senderFull)
+    if distribution == "WHISPER" then
+      local rec = Peers.Get(senderFull)
+      if not rec.hello or now - rec.hello >= 60 then
+        if send(hello(senderFull), "WHISPER", senderFull) then rec.hello = now end
+      end
+    end
   elseif tbl.t == "R" and type(tbl.r) == "table" then
-    if not compatibleData(tbl.d) then traffic("Rejected Request" .. source .. " Data version mismatch.") return end
+    if not ns.Snapshot.DataCompatible(tbl.d, tbl.m) then
+      Peers.SetCompatible(senderFull, false)
+      traffic("Rejected Request" .. source .. " Data version mismatch.")
+      return
+    end
     local rounds = requestedRounds(tbl.r)
     if not rounds then traffic("Rejected Request" .. source .. " Invalid rounds.") return end
-    Comm.peers[senderFull] = now
+    Peers.Heard(senderFull, now)
     traffic("Received " .. messageSummary(tbl) .. source)
-    respondToRequest(senderFull, rounds, requestId(tbl.id))
+    respondToRequest(senderFull, rounds, requestId(tbl.id), sinceTime(tbl.s), distribution == "WHISPER")
   elseif tbl.t == "S" and type(tbl.b) == "table" then
     if not solicited(distribution, senderFull, tbl.id, now) then traffic("Rejected Sample" .. source .. " Not a reply to our request.") return end
-    local stored, duplicate, rejected = 0, 0, math.max(0, #tbl.b - Comm.SAMPLE_SIZE)
+    local mine = Comm.SelfNames()
+    local stored, duplicate, own, rejected = 0, 0, 0, math.max(0, #tbl.b - Comm.SAMPLE_SIZE)
     for i = 1, math.min(#tbl.b, Comm.SAMPLE_SIZE) do
       local b = tbl.b[i]
-      if type(b) == "table" then
+      if type(b) ~= "table" then
+        rejected = rejected + 1
+      elseif mine[b.n] then
+        own = own + 1
+      else
         b.bot = nil
-        local added, why = ns.Pool.Add(b, { firsthand = false, now = now })
+        local added, why = ns.Pool.Add(b, { firsthand = false, now = now, floor = tbl.m })
         if added then stored = stored + 1
         elseif why == "duplicate" then duplicate = duplicate + 1
         else rejected = rejected + 1 end
-      else rejected = rejected + 1 end
+      end
     end
-    if stored > 0 or duplicate > 0 then Comm.peers[senderFull] = now end
-    traffic("Received " .. messageSummary(tbl) .. source .. " Stored " .. stored .. ", duplicate " .. duplicate .. ", rejected " .. rejected .. ".")
+    if stored > 0 or duplicate > 0 or own > 0 then Peers.Heard(senderFull, now) end
+    traffic("Received " .. messageSummary(tbl) .. source .. " Stored " .. stored .. ", duplicate " .. duplicate .. ", own " .. own .. ", rejected " .. rejected .. ".")
     ns.Debug("sample from", senderFull, "stored", stored)
     if stored > 0 and ns.UI.Main and ns.UI.Main.OnPoolChanged then ns.UI.Main.OnPoolChanged() end
   else

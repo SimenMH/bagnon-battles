@@ -187,19 +187,24 @@ def main():
     parser = argparse.ArgumentParser(description="Build a runtime-only Bagnon Battles addon package.")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="Validate runtime files without writing a package.")
-    mode.add_argument("--dev", nargs="?", const="retail", choices=sorted(WOW_ADDONS),
-                      help=f"Copy the runtime files into {DEV_NAME} in a client's AddOns folder (default: retail).")
+    mode.add_argument("--dev", nargs="*", choices=sorted(WOW_ADDONS), metavar="CLIENT",
+                      help=f"Copy the runtime files into {DEV_NAME} in the given clients' AddOns folders (default: all).")
     parser.add_argument("--addons-dir", type=Path,
                         help="Override the AddOns folder used by --dev.")
     options = parser.parse_args()
-    if options.addons_dir is not None and not options.dev:
+    if options.addons_dir is not None and options.dev is None:
         parser.error("--addons-dir requires --dev")
     try:
         if options.check:
             print(f"Validated {len(collect_files(ROOT))} runtime and license files.")
-        elif options.dev:
-            target, count = install_dev(ROOT, options.addons_dir or WOW_ADDONS[options.dev])
-            print(f"Copied {count} runtime and license files to {target}")
+        elif options.dev is not None:
+            if options.addons_dir is not None:
+                targets = [options.addons_dir]
+            else:
+                targets = [WOW_ADDONS[client] for client in (options.dev or sorted(WOW_ADDONS))]
+            for addons in targets:
+                target, count = install_dev(ROOT, addons)
+                print(f"Copied {count} runtime and license files to {target}")
         else:
             stage, archive, count = build_package(ROOT)
             print(f"Packaged {count} runtime and license files.")

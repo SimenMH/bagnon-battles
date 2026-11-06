@@ -515,14 +515,10 @@ function Grid:EffectNeighbors(p, rule)
   end
   local cells = effectCells(self, p, rule)
   if rule.empty then return {} end
-  local seen, excluded, out = { [p] = true }, {}, {}
-  if rule.corners == true then
-
-    for _, other in ipairs(self:AdjacentItems(p)) do excluded[other] = true end
-  end
+  local seen, out = { [p] = true }, {}
   for _, cell in ipairs(cells) do
     local other = self.occ[cell]
-    if other and not seen[other] and not excluded[other] then
+    if other and not seen[other] then
       seen[other] = true
       out[#out + 1] = other
     end

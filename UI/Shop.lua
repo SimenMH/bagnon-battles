@@ -452,8 +452,8 @@ function Shop.UnlockedTrainingRank(classKey, round)
       for quality = base.quality, #odds do if odds[quality] > 0 then obtainable = true break end end
       if obtainable then
         for rank = 2, ns.Ranks.TrainableMaxRank(base) do
-          local training = ns.Ranks.TrainingRule(base, rank)
-          if ns.Ranks.Definition(base, rank) and training and training.minRound == round
+          local tier = ns.Ranks.TRAINING[rank]
+          if ns.Ranks.Definition(base, rank) and tier and tier.minRound == round
             and (not unlockedRank or rank > unlockedRank) then unlockedRank = rank end
         end
       end

@@ -24,7 +24,7 @@ Comm.PUSH_FANOUT = 10
 Comm.PULL_INTERVAL = 180
 Comm.HELLO_COOLDOWN = 600
 Comm.FANOUT_COOLDOWN = 60
-Comm.WHISPER_WINDOW = 10
+Comm.WHISPER_WINDOW = 60
 Comm.session = string.format("%08x", math.random(0, 0x7fffffff))
 
 local CHANNEL_EVENTS = { "CHAT_MSG_CHANNEL_JOIN", "CHAT_MSG_CHANNEL_LEAVE", "CHAT_MSG_CHANNEL_LIST", "CHAT_MSG_CHANNEL_NOTICE" }
@@ -123,7 +123,7 @@ function Comm.ChannelIndex()
 end
 
 local function hideChannelFromChat()
-  local remove = ChatFrame_RemoveChannel or (ChatFrameUtil and ChatFrameUtil.RemoveChannel)
+  local remove = ChatFrameUtil and ChatFrameUtil.RemoveChannel or ChatFrame_RemoveChannel
   if not remove then return end
   for i = 1, NUM_CHAT_WINDOWS or 10 do
     local frame = _G["ChatFrame" .. i]
@@ -154,7 +154,7 @@ end
 
 local function installFilters()
   if filtersInstalled then return end
-  local add = ChatFrame_AddMessageEventFilter or (ChatFrameUtil and ChatFrameUtil.AddMessageEventFilter)
+  local add = ChatFrameUtil and ChatFrameUtil.AddMessageEventFilter or ChatFrame_AddMessageEventFilter
   if not add then return end
   filtersInstalled = true
   for _, event in ipairs(CHANNEL_EVENTS) do add(event, hideChannelLine) end

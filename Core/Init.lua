@@ -3,6 +3,8 @@ local ADDON, ns = ...
 ns.ADDON            = ADDON
 ns.VERSION          = "0.4.0"
 ns.PROTOCOL_VERSION = 1
+-- WARNING: Raising MIN_DATA_VERSION deletes stored builds from older versions.
+-- Only raise it when absolutely necessary to reject incompatible build data.
 ns.DATA_VERSION     = 39
 ns.MIN_DATA_VERSION = 39
 ns.PREFIX           = "BgnB"

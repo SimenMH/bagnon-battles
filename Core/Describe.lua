@@ -1683,6 +1683,72 @@ local function triggerConstant(trig)
   return true
 end
 
+local function combinedTrigger(first, second)
+  if first.every or first.everyAmount or first.oncePerActivation then return nil end
+  local compared = Util.ShallowCopy(second)
+  compared.on = first.on
+  if not sameEffect(first, compared) then return nil end
+  local events = { [first.on] = true, [second.on] = true }
+  if first.on == second.on then return nil end
+  local result = {}
+  if events.block and events.dodged then
+    for _, effect in ipairs(first.effects) do if effect.fromEvent then return nil end end
+    result.intro = "When you block or dodge an attack"
+    if first.icd and not first.counterKey then
+      result.cooldown = "Separate " .. fmtNumber(first.icd) .. " sec cooldowns for blocking and dodging."
+    end
+  elseif events.anyHit and events.dotTick then
+    local effect, filter = first.effects[1], first.match
+    if #first.effects ~= 1 or not filter or not SCHOOL_LABELS[filter.tag]
+      or not sameEffect(first, { on = first.on, match = filter, effects = first.effects })
+      or not sameEffect(filter, filter.kind and { kind = "ability", tag = filter.tag } or { tag = filter.tag })
+      or not sameEffect(effect, { type = "heal", fromEvent = effect.fromEvent, noCrit = true }) or not effect.fromEvent then return nil end
+    local school, amount = SCHOOL_LABELS[filter.tag], fmtNumber(effect.fromEvent * 100)
+    result.text = filter.kind and "Your " .. school .. " abilities heal you for " .. amount .. "% of the damage they deal"
+      or "Your " .. school .. " damage heals you for " .. amount .. "% of the damage dealt"
+  elseif events.anyUse and events.channelComplete then
+    local source = first.match and first.match.key and ns.ItemsByKey[first.match.key]
+    if not source or not source.use or not source.use.channel
+      or not sameEffect(first, { on = first.on, match = first.match, effects = first.effects }) then return nil end
+    result.intro = "When you begin or finish channeling " .. source.name
+  else
+    return nil
+  end
+  if first.icd and not result.cooldown then
+    if not first.counterKey then return nil end
+    result.cooldown = "Once every " .. fmtNumber(first.icd) .. " sec."
+  end
+  return result
+end
+
+local function extraAttackSummary(def, details, context)
+  if #def.triggers ~= 3 then return nil end
+  local attacks = {}
+  for _, trig in ipairs(def.triggers) do
+    if attacks[trig.on] then return nil end
+    attacks[trig.on] = trig
+  end
+  local regular, extra, strike = attacks.regularHit, attacks.extraHit, attacks.anyHit
+  if not regular or not extra or not strike or not regular.chance or not extra.chance
+    or strike.chance ~= regular.chance or #regular.effects ~= 1 or regular.effects[1].type ~= "extraAttack"
+    or not sameEffect(regular.match, { tag = "melee" })
+    or not sameEffect(extra.match, { kind = "weapon", anyTag = { "autoattack" }, tag = "melee" })
+    or not strike.match or not strike.match.key
+    or not sameEffect(strike.match, { key = strike.match.key, kind = "ability", tag = "melee" }) then return nil end
+  local source = ns.ItemsByKey[strike.match.key]
+  if not source then return nil end
+  for _, trig in ipairs({ regular, extra, strike }) do
+    if not sameEffect(trig, { on = trig.on, match = trig.match, chance = trig.chance, effects = regular.effects }) then return nil end
+  end
+  local action = describeEffect(regular.effects[1], regular, details, context, def)
+  if not action:match("^Make ") then return nil end
+  action = action:gsub("^Make ", "granting you ")
+  return {
+    "Melee auto-attacks and " .. source.name .. " have a " .. fmtNumber(regular.chance) .. "% chance of " .. action,
+    "Extra attacks have a " .. fmtNumber(extra.chance) .. "% chance of triggering this effect.",
+  }
+end
+
 local function passiveTrigger(trigger)
   if trigger.on ~= "battleStart" or (trigger.condition and trigger.condition ~= "dualwield") or trigger.chance or trigger.everyAmount then return false end
   if #trigger.effects == 0 then return false end
@@ -1900,7 +1966,7 @@ function Describe.Lines(def, context)
       if #parts > 0 then add("  Requires " .. table.concat(parts, " and ") .. ".", { r = 1, g = 0.4, b = 0.4 }) end
     end
   end
-  local sharedCooldowns, emittedCooldowns, spendingIntros, combinedTriggers = {}, {}, {}, {}
+  local sharedCooldowns, emittedCooldowns, spendingIntros, combinedTriggers, triggerGroups = {}, {}, {}, {}, {}
   for index, trig in ipairs(def.triggers) do
     if trig.counterKey and trig.icd then sharedCooldowns[trig.counterKey] = (sharedCooldowns[trig.counterKey] or 0) + 1 end
     if not combinedTriggers[trig] and trig.on == "resourceSpent" and trig.counterKey and trig.resource and trig.everyAmount then
@@ -1918,20 +1984,36 @@ function Describe.Lines(def, context)
       end
       if #costs > 1 then spendingIntros[trig] = "For every " .. joinOr(costs) .. " spent" end
     end
+    if not combinedTriggers[trig] then
+      for otherIndex = index + 1, #def.triggers do
+        local other = def.triggers[otherIndex]
+        local group = not combinedTriggers[other] and combinedTrigger(trig, other)
+        if group then
+          triggerGroups[trig], combinedTriggers[other] = group, true
+          break
+        end
+      end
+    end
   end
+  local extraAttacks = extraAttackSummary(def, details, context)
   for _, trig in ipairs(def.triggers) do
     local effect = trig.effects[1]
     local sharedShadow = trig.counterKey == "priest_shadow_weaving"
     local petRecovery = trig.on == "damaged" and trig.condition == "provides:pet" and #trig.effects == 1
       and not (trig.chance or trig.every or trig.everyAmount or trig.icd or trig.matchAttacker or trig.match)
       and effect.type == "cdr" and effect.target == "all" and effect.match and effect.match.kind == "pet"
-    if combinedTriggers[trig] or sharedShadow and trig.on == "anyHit" then
+    if extraAttacks then
+      if trig == def.triggers[1] then
+        for _, text in ipairs(extraAttacks) do add(text, green, "trigger") end
+      end
+    elseif combinedTriggers[trig] or sharedShadow and trig.on == "anyHit" then
 
     elseif (details or not trig.detail) and petRecovery then
       local pet = def.classes and #def.classes == 1 and def.classes[1] == "WARLOCK" and "demon" or "pet"
       add(string.format("While your %s is active, taking damage reduces its attack cooldown by %s sec.", pet, fmtNumber(effect.amount)), green, "trigger")
     elseif details or not trig.detail then
       local passive = passiveTrigger(trig) or triggerConstant(trig)
+      local group = triggerGroups[trig]
       local condition = triggerCondition(trig, activeKey)
       local effects = trig.effects
       if ward and trig == ward.trigger then
@@ -1951,7 +2033,10 @@ function Describe.Lines(def, context)
         return table.concat(parts, ", ", 1, #parts - 1) .. " and " .. parts[#parts]
       end
       local text
-      if passive then
+      if group and group.text then
+        text = group.text
+        if condition then text = condition:gsub("^%l", string.upper) .. ", " .. text:gsub("^%u", string.lower) end
+      elseif passive then
         text = join(parts):gsub("^you ", ""):gsub(", you ", ", "):gsub(" and you ", " and ")
         if #trig.effects == 1 and effect.type == "buff" and effect.stat == "crit" and effect.target == "all"
           and effect.match and effect.match.tag == "melee" then
@@ -1987,7 +2072,7 @@ function Describe.Lines(def, context)
           text = condition:gsub("^%l", string.upper) .. ", " .. text:gsub("^%u", string.lower)
         end
       else
-        local intro = spendingIntros[trig] or triggerIntro(def, trig, context, sharedShadow)
+        local intro = group and group.intro or spendingIntros[trig] or triggerIntro(def, trig, context, sharedShadow)
         if trig.matchAttacker then
           local attacker = triggerArticle(matchNoun(trig.matchAttacker, false), trig.matchAttacker.key)
           intro = intro .. (trig.on == "damaged" and trig.critical == true and " by " or " from ") .. attacker
@@ -2021,6 +2106,7 @@ function Describe.Lines(def, context)
         if trig.counterKey and sharedCooldowns[trig.counterKey] > 1 and not sharedShadow then
           text = "These effects share a " .. fmtNumber(trig.icd) .. " sec cooldown."
         end
+        if group and group.cooldown then text = group.cooldown end
         add(text, grey, "detail")
         if trig.counterKey then emittedCooldowns[trig.counterKey] = true end
       end

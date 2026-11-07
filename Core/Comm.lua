@@ -137,6 +137,7 @@ end
 
 local function offlineTarget(message)
   local template = ERR_CHAT_PLAYER_NOT_FOUND_S
+  if issecretvalue and issecretvalue(message) then return end
   if type(message) ~= "string" or type(template) ~= "string" then return end
   local now = Util.Now()
   for name, at in pairs(whispered) do
@@ -181,6 +182,7 @@ local function send(tbl, distribution, target)
   local function report()
     if state.failed then
       traffic("Send failed: " .. description .. " Result " .. resultSummary(state.result) .. ".")
+      if distribution == "WHISPER" then Peers.MarkOffline(target) end
     else
       traffic("Sent " .. description .. " Result " .. resultSummary(state.result) .. ".")
     end
